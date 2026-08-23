@@ -66,6 +66,20 @@ wget -qO- https://raw.githubusercontent.com/naiemk/vibed-infra/main/install.sh |
 | `INSTALL_DIR` | Target directory (default `.`) |
 | `ONCHAIN_INVOICE_RAW` | Product templates base (opaque to infra) |
 
+## Publishing (npm)
+
+Every **merge to `main`** runs [Publish npm](.github/workflows/publish.yml):
+
+1. Bumps **minor** (`0.1.0` → `0.2.0`)
+2. Commits `chore: release vibed-infra v…`, tags `v…`, pushes
+3. Runs `npm publish` (needs repo secret `NPM_TOKEN`)
+
+**Major versions** — set `version` in `package.json` yourself (e.g. `1.0.0`) and include **`[major]`** in the commit message (or PR merge commit). That publishes the pinned version with **no** automatic minor bump.
+
+Manual run: Actions → Publish npm → `workflow_dispatch` (`minor` / `major` / `none`).
+
+Ordinary PRs only run CI (`npm test`); they do **not** publish.
+
 ## Trustless Commerce
 
 First consumer: [onchain-invoice](https://github.com/naiemk/onchain-invoice) — `deploy/packageconfig.yaml` + `deploy/templates/`.
