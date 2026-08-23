@@ -1,0 +1,29 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/typescript-node
+{
+	"name": "Node.js & TypeScript",
+	"build": {
+		"dockerfile": "./Dockerfile"
+	},
+	// Bind sibling product repos from the host when developing against them.
+	"workspaceFolder": "/workspaces/vibed-infra",
+	"mounts": [
+	],
+	"forwardPorts": [],
+	"features": {
+		"ghcr.io/devcontainers/features/python:1": {},
+		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+		"ghcr.io/devcontainers/features/github-cli:1": {}
+	},
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-azuretools.vscode-containers",
+				"ms-azuretools.vscode-docker",
+				"esbenp.prettier-vscode",
+				"NomicFoundation.hardhat-solidity"
+			]
+		}
+	},
+	"remoteUser": "node"
+}

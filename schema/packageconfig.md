@@ -9,7 +9,7 @@ name: my-product          # slug for cron markers / logs
 version: 1
 
 rawBase: https://raw.githubusercontent.com/org/repo/main/deploy/templates
-packagerRaw: https://raw.githubusercontent.com/org/repo/main/infra
+packagerRaw: https://raw.githubusercontent.com/naiemk/vibed-infra/main
 
 network:
   edge: my-product-edge   # shared Docker network for gateway + APIs
@@ -73,6 +73,8 @@ profiles:
         backendPort: 8080
         ui: app-ui
         uiPort: 80
+        healthPath: /api/health      # optional; default /api/health
+        createPath: /api/items       # optional rate-limited POST; omitted if unset
         tlsCertDir: /etc/letsencrypt/live/app.example.com
     autoUpdate:
       flags: [UI_AUTO_UPDATE, GATEWAY_AUTO_UPDATE]

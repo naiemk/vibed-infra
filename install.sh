@@ -27,6 +27,7 @@ while [[ $# -gt 0 ]]; do
     --dest) DEST="$2"; shift 2 ;;
     -h|--help)
       echo "usage: install.sh [--profile api|nodes|gateway] [--dest DIR]"
+      echo "env: PACKAGECONFIG_URL PRODUCT_RAW PACKAGER_RAW INFRA_PROFILE INSTALL_DIR"
       exit 0
       ;;
     *) shift ;;
@@ -86,7 +87,8 @@ fi
 
 PACKAGECONFIG_URL="${PACKAGECONFIG_URL:-${PACKAGE_CONFIG_URL:-}}"
 if [[ -z "$PACKAGECONFIG_URL" ]]; then
-  PACKAGECONFIG_URL="https://raw.githubusercontent.com/naiemk/onchain-invoice/main/deploy/packageconfig.yaml"
+  echo "Set PACKAGECONFIG_URL to the product packageconfig.yaml (URL or path)" >&2
+  exit 1
 fi
 PC_LOCAL="$DEST/.packageconfig.yaml"
 if [[ "$PACKAGECONFIG_URL" =~ ^/ ]]; then
@@ -95,16 +97,25 @@ else
   infra_fetch "$PACKAGECONFIG_URL" "$PC_LOCAL"
 fi
 
-PRODUCT_RAW="${ONCHAIN_INVOICE_RAW:-$(
-  python3 -c "
+if [[ -z "${PRODUCT_RAW:-}" && -n "${ONCHAIN_INVOICE_RAW:-}" ]]; then
+  echo "warning: ONCHAIN_INVOICE_RAW is deprecated; use PRODUCT_RAW" >&2
+  PRODUCT_RAW="$ONCHAIN_INVOICE_RAW"
+fi
+if [[ -z "${PRODUCT_RAW:-}" ]]; then
+  PRODUCT_RAW="$(
+    python3 -c "
 import sys
 sys.path.insert(0, '${INFRA_LIB}')
 from load_config import load_packageconfig
 from pathlib import Path
 print(load_packageconfig(Path('${PC_LOCAL}')).get('rawBase',''))
 "
-)}"
-[[ -n "$PRODUCT_RAW" ]] || PRODUCT_RAW="https://raw.githubusercontent.com/naiemk/onchain-invoice/main/deploy/templates"
+  )"
+fi
+if [[ -z "$PRODUCT_RAW" ]]; then
+  echo "Set PRODUCT_RAW or packageconfig rawBase (product templates URL or path)" >&2
+  exit 1
+fi
 
 echo "== infra install profile=$PROFILE dest=$DEST =="
 
@@ -215,10 +226,23 @@ if [[ "$ROLE" == "gateway" ]]; then
   # shellcheck source=/dev/null
   source "$DEST/lib-env.sh"
   load_dotenv "$DEST/.env"
-  TLS_FULLCHAIN="${TLS_FULLCHAIN:-/etc/letsencrypt/live/trustless-commerce.com/fullchain.pem}"
-  TLS_PRIVKEY="${TLS_PRIVKEY:-/etc/letsencrypt/live/trustless-commerce.com/privkey.pem}"
+  CERT_DIR="$(python3 -c "
+import sys
+sys.path.insert(0, '${INFRA_LIB}')
+from load_config import load_packageconfig, get_profile
+from pathlib import Path
+p = get_profile(load_packageconfig(Path('${PC_LOCAL}')), '${PROFILE}')
+sites = p.get('sites') or []
+if not sites:
+    print('/etc/letsencrypt/live/example.com')
+else:
+    s = sites[0]
+    print(s.get('tlsCertDir') or ('/etc/letsencrypt/live/' + s['host']))
+")"
+  TLS_FULLCHAIN="${TLS_FULLCHAIN:-${CERT_DIR}/fullchain.pem}"
+  TLS_PRIVKEY="${TLS_PRIVKEY:-${CERT_DIR}/privkey.pem}"
   mapfile -t DOMAIN_ARR < <(python3 -c "
-import sys, json
+import sys
 sys.path.insert(0, '${INFRA_LIB}')
 from load_config import load_packageconfig, get_profile
 from pathlib import Path

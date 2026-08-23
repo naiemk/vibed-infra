@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hello VPS</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+    body { margin: 0; background: #0f1419; color: #e7ecf1; }
+    main { max-width: 40rem; margin: 2.5rem auto; padding: 0 1.25rem; }
+    h1 { font-size: 1.5rem; font-weight: 650; }
+    p { color: #9aa7b4; }
+    form { display: flex; gap: .5rem; margin: 1.25rem 0; }
+    input { flex: 1; padding: .65rem .75rem; border: 1px solid #2a3540; border-radius: .5rem; background: #161d24; color: inherit; }
+    button { padding: .65rem 1rem; border: 0; border-radius: .5rem; background: #3d8bfd; color: #fff; font-weight: 600; cursor: pointer; }
+    li { list-style: none; padding: .75rem 0; border-bottom: 1px solid #1d262e; }
+    ul { padding: 0; margin: 0; }
+    .meta { font-size: .8rem; color: #7d8b97; }
+    .err { color: #ff8a80; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Hello VPS</h1>
+    <p>Example app packaged with <code>vibed-infra</code>: API + worker + HTTPS gateway.</p>
+    <form id="form">
+      <input id="body" maxlength="500" placeholder="Write a note…" required />
+      <button type="submit">Post</button>
+    </form>
+    <p id="status" class="meta">Loading…</p>
+    <ul id="list"></ul>
+  </main>
+  <script>
+    const token = new URLSearchParams(location.search).get("token") || "";
+    const status = document.getElementById("status");
+    const list = document.getElementById("list");
+
+    async function load() {
+      const res = await fetch("/api/notes");
+      if (!res.ok) throw new Error("API " + res.status);
+      const data = await res.json();
+      list.innerHTML = (data.notes || []).map((n) => {
+        const when = n.createdAt ? new Date(n.createdAt * 1000).toLocaleString() : "";
+        return `<li><div class="meta">${escapeHtml(n.author)} · ${when}</div>${escapeHtml(n.body)}</li>`;
+      }).join("") || "<li class='meta'>No notes yet.</li>";
+      status.textContent = "Live";
+    }
+
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const body = document.getElementById("body").value.trim();
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers.Authorization = "Bearer " + token;
+      const res = await fetch("/api/notes", { method: "POST", headers, body: JSON.stringify({ author: "web", body }) });
+      if (!res.ok) { status.textContent = "Post failed (" + res.status + "). Add ?token=… if the API requires it."; status.className = "err"; return; }
+      document.getElementById("body").value = "";
+      status.className = "meta";
+      await load();
+    });
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    load().catch((err) => { status.textContent = String(err); status.className = "err"; });
+    setInterval(() => load().catch(() => {}), 15000);
+  </script>
+</body>
+</html>

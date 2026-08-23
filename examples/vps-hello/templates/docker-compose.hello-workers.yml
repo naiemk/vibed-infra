@@ -1,0 +1,26 @@
+# Product worker compose (not docker-compose.workers.yml — install copies the generic one under that name).
+
+networks:
+  edge:
+    external: true
+    name: ${DOCKER_NETWORK:-hello-vps-edge}
+
+services:
+  heartbeat:
+    image: ${WORKER_IMAGE:-hello-vps-worker:local}
+    container_name: ${WORKER_CONTAINER_NAME:-hello-worker-heartbeat}
+    restart: unless-stopped
+    mem_limit: ${WORKER_MEMORY_LIMIT:-64m}
+    env_file: .env
+    environment:
+      WORKER_ROLE: ${WORKER_ROLE:-heartbeat}
+      WORKER_CONFIG: /config/workers.yaml
+      API_URL: ${API_URL:-http://hello-api:8080}
+      INTERVAL_SEC: ${INTERVAL_SEC:-60}
+    volumes:
+      - ./logs:/data/logs
+      - ./workers.yaml:/config/workers.yaml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - edge

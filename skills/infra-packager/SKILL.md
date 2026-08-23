@@ -11,39 +11,40 @@ description: >-
 ## When to use
 
 - New repo needs wget VPS install (backend + UI + workers + HTTPS gateway)
-- Splitting deploy scripts into reusable infra + product templates
+- Splitting deploy scripts into reusable vibed-infra + product templates
 
 ## Steps
 
-1. **Copy or submodule** [`infra/`](../../infra/) (later: separate `infra-packager` repo; set `packagerRaw` in packageconfig).
+1. **Depend on** [`vibed-infra`](https://www.npmjs.com/package/vibed-infra) (`npm install vibed-infra`) or wget `install.sh` from this repo. Set `packagerRaw` in packageconfig.
 
-2. **Create** `deploy/packageconfig.yaml` — see [`infra/schema/packageconfig.md`](../../infra/schema/packageconfig.md) and Trustless Commerce example [`deploy/packageconfig.yaml`](../../deploy/packageconfig.yaml).
+2. **Create** `deploy/packageconfig.yaml` — see [`schema/packageconfig.md`](../../schema/packageconfig.md) and the VPS example [`examples/vps-hello/packageconfig.yaml`](../../examples/vps-hello/packageconfig.yaml).
 
 3. **Add templates** under `deploy/templates/`:
    - `.env.*.example` (secrets — opaque to infra)
    - App config YAML (opaque)
-   - `start-*.sh` / `update-*.sh` (or use generic `infra/start.sh`)
+   - `start-*.sh` / `update-*.sh` (or use generic `start.sh`)
    - Worker `docker-compose.*.yml` if multi-runner
 
-4. **Thin wrappers** (3 lines each):
+4. **Thin wrappers** (set profile + product URLs):
 
 ```bash
 # deploy/install/install-api.sh
 export INFRA_PROFILE=api
 export PACKAGECONFIG_URL=https://raw.githubusercontent.com/ORG/REPO/main/deploy/packageconfig.yaml
-wget -qO- https://raw.githubusercontent.com/ORG/REPO/main/infra/install.sh | bash
+export PRODUCT_RAW=https://raw.githubusercontent.com/ORG/REPO/main/deploy/templates
+wget -qO- https://raw.githubusercontent.com/naiemk/vibed-infra/main/install.sh | bash
 ```
 
 5. **Build images** — Dockerfiles in `deploy/`; push to GHCR; reference in `packageconfig.images`.
 
-6. **CI** — use [`infra/github/workflows/docker-build-reusable.yml`](../../infra/github/workflows/docker-build-reusable.yml); add install e2e serving `infra/` + `deploy/templates/` over HTTP.
+6. **CI** — use [`github/workflows/docker-build-reusable.yml`](../../github/workflows/docker-build-reusable.yml); add install e2e serving the packager + `deploy/templates/` over HTTP.
 
 7. **VPS** — per component directory:
 
 ```bash
 mkdir -p ~/app/api && cd ~/app/api
 wget -qO- .../deploy/install/install-api.sh | bash
-# edit .env, then ./start-onchain-invoice-api.sh (or ./start.sh)
+# edit .env, then ./start-api.sh (or ./start.sh)
 ```
 
 ## Rules

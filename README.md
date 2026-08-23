@@ -23,14 +23,14 @@ Run install locally (product `packageconfig.yaml` + templates required):
 ```bash
 PACKAGER_RAW=/path/to/node_modules/vibed-infra \
 PACKAGECONFIG_URL=/path/to/product/deploy/packageconfig.yaml \
-ONCHAIN_INVOICE_RAW=/path/to/product/deploy/templates \
+PRODUCT_RAW=/path/to/product/deploy/templates \
 bash /path/to/node_modules/vibed-infra/install.sh --profile api
 ```
 
 Or use the bin:
 
 ```bash
-npx vibed-infra --profile api   # still needs PACKAGECONFIG_URL / product templates env
+npx vibed-infra --profile api   # still needs PACKAGECONFIG_URL / PRODUCT_RAW (or packageconfig rawBase)
 ```
 
 ## Install (wget, operators)
@@ -38,8 +38,8 @@ npx vibed-infra --profile api   # still needs PACKAGECONFIG_URL / product templa
 ```bash
 wget -qO- https://raw.githubusercontent.com/naiemk/vibed-infra/main/install.sh | \
   env INFRA_PROFILE=api \
-      PACKAGECONFIG_URL=https://raw.githubusercontent.com/naiemk/onchain-invoice/main/deploy/packageconfig.yaml \
-      ONCHAIN_INVOICE_RAW=https://raw.githubusercontent.com/naiemk/onchain-invoice/main/deploy/templates \
+      PACKAGECONFIG_URL=https://raw.githubusercontent.com/ORG/REPO/main/deploy/packageconfig.yaml \
+      PRODUCT_RAW=https://raw.githubusercontent.com/ORG/REPO/main/deploy/templates \
       bash
 ```
 
@@ -53,6 +53,7 @@ wget -qO- https://raw.githubusercontent.com/naiemk/vibed-infra/main/install.sh |
 | `lib/` | fetch, env, tls, prompt, generate |
 | `templates/` | Generic compose/nginx skeletons |
 | `schema/packageconfig.md` | Schema reference |
+| `examples/vps-hello/` | Full product that installs API + worker + HTTPS gateway on a VPS |
 | `skills/` | Cursor skills |
 | `github/workflows/` | Reusable GHCR build workflow |
 
@@ -62,9 +63,9 @@ wget -qO- https://raw.githubusercontent.com/naiemk/vibed-infra/main/install.sh |
 |----------|---------|
 | `PACKAGER_RAW` | Base URL or local path to this package root |
 | `PACKAGECONFIG_URL` | Product `packageconfig.yaml` (URL or path) |
+| `PRODUCT_RAW` | Product templates base (overrides `rawBase`; opaque to infra) |
 | `INFRA_PROFILE` | `api`, `nodes`, or `gateway` |
 | `INSTALL_DIR` | Target directory (default `.`) |
-| `ONCHAIN_INVOICE_RAW` | Product templates base (opaque to infra) |
 
 ## Publishing (npm)
 
@@ -82,6 +83,17 @@ Set repository secret **`NPM_TOKEN`** (npm automation token with publish access)
 
 Ordinary PRs only run CI (`npm test`); they do **not** publish.
 
-## Trustless Commerce
+## Example (VPS)
 
-First consumer: [onchain-invoice](https://github.com/naiemk/onchain-invoice) — `deploy/packageconfig.yaml` + `deploy/templates/`.
+[`examples/vps-hello`](examples/vps-hello) is a complete product that uses this packager: `packageconfig.yaml`, install wrappers, start/update scripts, and a tiny API/UI/worker you can build on the box.
+
+```bash
+git clone https://github.com/naiemk/vibed-infra.git
+cd vibed-infra
+./examples/vps-hello/scripts/build-images.sh
+mkdir -p ~/hello-vps/api && cd ~/hello-vps/api
+bash /path/to/vibed-infra/examples/vps-hello/install/install-api.sh
+# edit .env, then ./start-hello-api.sh
+```
+
+Runbook: [`examples/vps-hello/README.md`](examples/vps-hello/README.md).

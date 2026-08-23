@@ -60,7 +60,9 @@ def _parse_minimal(text: str) -> dict[str, Any]:
         key = key.strip()
         rest = rest.strip()
         if rest == "":
-            if key.endswith("s") or key in ("sites", "aliases", "extras", "services", "flags"):
+            # Only known sequences — do not treat every plural key as a list
+            # (`profiles`, `images`, `templates` are mappings).
+            if key in ("sites", "aliases", "extras", "services", "flags"):
                 parent[key] = []
                 list_key = key
                 list_indent = indent
