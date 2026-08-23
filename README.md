@@ -71,6 +71,8 @@ wget -qO- .../dist/install-gateway.sh | bash
 | `INFRA_PROFILE` | `api`, `ui`, `nodes`, or `gateway` |
 | `INSTALL_DIR` | Target directory (default `.`) |
 
+Auto-update cron runs profile `update-*.sh`. Each update **prunes dangling Docker images** by default (`DOCKER_AUTO_PRUNE=1`). Set `DOCKER_PRUNE_UNUSED=1` to also drop unused tagged images older than `DOCKER_PRUNE_UNTIL` (default `72h`).
+
 ## Tests
 
 ```bash

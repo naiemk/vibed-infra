@@ -28,12 +28,13 @@ run_api_update() {
   fi
   if ! container_needs_image "$name" "$image"; then
     log_update "$SCRIPT_DIR" "api: $name already on latest $image"
-    return 0
+  else
+    log_update "$SCRIPT_DIR" "api: updating $name"
+    graceful_stop "$name" "$stop_timeout"
+    PULL=0 "$SCRIPT_DIR/start-api.sh"
+    log_update "$SCRIPT_DIR" "api: $name updated"
   fi
-  log_update "$SCRIPT_DIR" "api: updating $name"
-  graceful_stop "$name" "$stop_timeout"
-  PULL=0 "$SCRIPT_DIR/start-api.sh"
-  log_update "$SCRIPT_DIR" "api: $name updated"
+  prune_docker_images "$SCRIPT_DIR" "api"
 }
 
 with_update_lock "$SCRIPT_DIR" "api" run_api_update

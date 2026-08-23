@@ -27,11 +27,12 @@ run_nodes_update() {
   fi
   if ! container_needs_image "$name" "$image"; then
     log_update "$SCRIPT_DIR" "nodes: $name already on latest $image"
-    return 0
+  else
+    log_update "$SCRIPT_DIR" "nodes: updating via compose"
+    PULL=0 "$SCRIPT_DIR/start-nodes.sh"
+    log_update "$SCRIPT_DIR" "nodes: updated"
   fi
-  log_update "$SCRIPT_DIR" "nodes: updating via compose"
-  PULL=0 "$SCRIPT_DIR/start-nodes.sh"
-  log_update "$SCRIPT_DIR" "nodes: updated"
+  prune_docker_images "$SCRIPT_DIR" "nodes"
 }
 
 with_update_lock "$SCRIPT_DIR" "nodes" run_nodes_update

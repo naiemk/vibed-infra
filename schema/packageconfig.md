@@ -73,4 +73,14 @@ config:          # opaque — written to dist/nodes-workers.yaml
 | `PACKAGECONFIG_URL` | defaults to `dist/packageconfig.yaml` |
 | `INFRA_PROFILE` | `api`, `ui`, `nodes`, or `gateway` |
 
+### Auto-update + image prune
+
+When `*_AUTO_UPDATE=1`, cron runs the profile `update-*.sh`. After each run it **prunes dangling Docker images** (old digests left when `:main` is retagged) so disk does not fill up.
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `DOCKER_AUTO_PRUNE` | `1` | Prune dangling images after auto-update |
+| `DOCKER_PRUNE_UNUSED` | `0` | Also prune unused tagged images older than `DOCKER_PRUNE_UNTIL` |
+| `DOCKER_PRUNE_UNTIL` | `72h` | Age filter for unused prune (`docker image prune -af --filter until=…`) |
+
 Legacy `packageconfig.yaml`-only products still work; new products use the four-file layout + `package.sh`.
