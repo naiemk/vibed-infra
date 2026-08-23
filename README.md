@@ -78,6 +78,8 @@ Every **merge to `main`** runs [Publish npm](.github/workflows/publish.yml):
 
 Manual run: Actions → Publish npm → `workflow_dispatch` (`minor` / `major` / `none`).
 
+Set repository secret **`NPM_TOKEN`** (npm automation token with publish access) before the first merge to `main`.
+
 Ordinary PRs only run CI (`npm test`); they do **not** publish.
 
 ## Trustless Commerce
