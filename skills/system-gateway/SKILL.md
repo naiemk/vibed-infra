@@ -35,7 +35,7 @@ sudo certbot certonly --standalone -d app.example.com
 
 Set `TLS_FULLCHAIN` / `TLS_PRIVKEY` in gateway `.env`, then `./start-gateway.sh` (reloads certs into the gateway volume).
 
-6. **Auto-update** — stagger cron: API :00, UI :15, workers :10, gateway :20 (infra defaults).
+6. **Auto-update** — stagger cron: API :00, UI :15, workers :10, gateway :20 (infra defaults). Update scripts prune dangling images afterward (`DOCKER_AUTO_PRUNE=1`).
 
 ## Dual-domain on one host
 

@@ -50,6 +50,9 @@ API_MEMORY_LIMIT=256m
 {au['flag']}=0
 {au['intervalEnv']}=30
 {au['stopTimeoutEnv']}=60
+DOCKER_AUTO_PRUNE=1
+DOCKER_PRUNE_UNUSED=0
+DOCKER_PRUNE_UNTIL=72h
 """
 
 
@@ -63,6 +66,9 @@ UI_MEMORY_LIMIT=32m
 {au['flag']}=0
 {au['intervalEnv']}=20
 {au['stopTimeoutEnv']}=30
+DOCKER_AUTO_PRUNE=1
+DOCKER_PRUNE_UNUSED=0
+DOCKER_PRUNE_UNTIL=72h
 """
 
 
@@ -81,6 +87,9 @@ WORKER_MEMORY_LIMIT=64m
 {au['flag']}=0
 {au['intervalEnv']}=30
 {au['stopTimeoutEnv']}=30
+DOCKER_AUTO_PRUNE=1
+DOCKER_PRUNE_UNUSED=0
+DOCKER_PRUNE_UNTIL=72h
 """
 
 
@@ -103,6 +112,9 @@ GATEWAY_MEMORY_LIMIT=64m
 {flag_lines}
 {au.get('intervalEnv', 'GATEWAY_AUTO_UPDATE_INTERVAL_MIN')}=20
 {au.get('stopTimeoutEnv', 'GATEWAY_STOP_TIMEOUT')}=30
+DOCKER_AUTO_PRUNE=1
+DOCKER_PRUNE_UNUSED=0
+DOCKER_PRUNE_UNTIL=72h
 """
 
 

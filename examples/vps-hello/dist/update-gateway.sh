@@ -30,12 +30,13 @@ run_gateway_update() {
   fi
   if ! container_needs_image "$name" "$image"; then
     log_update "$SCRIPT_DIR" "gateway: $name already on latest $image"
-    return 0
+  else
+    log_update "$SCRIPT_DIR" "gateway: updating $name"
+    graceful_stop "$name" "$stop_timeout"
+    PULL=0 "$SCRIPT_DIR/start-gateway.sh"
+    log_update "$SCRIPT_DIR" "gateway: $name updated"
   fi
-  log_update "$SCRIPT_DIR" "gateway: updating $name"
-  graceful_stop "$name" "$stop_timeout"
-  PULL=0 "$SCRIPT_DIR/start-gateway.sh"
-  log_update "$SCRIPT_DIR" "gateway: $name updated"
+  prune_docker_images "$SCRIPT_DIR" "gateway"
 }
 
 with_update_lock "$SCRIPT_DIR" "gateway" run_gateway_update

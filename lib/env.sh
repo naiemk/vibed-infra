@@ -222,3 +222,32 @@ chown_data_dir() {
   fi
   chmod 755 "$dir" 2>/dev/null || true
 }
+
+# Default on during auto-update. Set DOCKER_AUTO_PRUNE=0 to disable.
+docker_auto_prune_on() {
+  if [[ -n "${DOCKER_AUTO_PRUNE+x}" ]]; then
+    env_flag_on DOCKER_AUTO_PRUNE
+    return
+  fi
+  return 0
+}
+
+# Drop dangling images left after retagged pulls (e.g. :main). Optionally also
+# remove unused tagged images older than DOCKER_PRUNE_UNTIL when DOCKER_PRUNE_UNUSED=1.
+prune_docker_images() {
+  local log_dir="${1:-.}"
+  local role_label="${2:-infra}"
+  docker_auto_prune_on || return 0
+  if ! command -v docker >/dev/null 2>&1; then
+    return 0
+  fi
+  local summary
+  summary="$(docker image prune -f 2>/dev/null | awk '/Total reclaimed space/{print; found=1} END{if(!found) print "done"}' || echo done)"
+  log_update "$log_dir" "${role_label}: prune dangling images — ${summary}"
+  if env_flag_on DOCKER_PRUNE_UNUSED; then
+    local until="${DOCKER_PRUNE_UNTIL:-72h}"
+    summary="$(docker image prune -af --filter "until=${until}" 2>/dev/null \
+      | awk '/Total reclaimed space/{print; found=1} END{if(!found) print "done"}' || echo done)"
+    log_update "$log_dir" "${role_label}: prune unused images (until=${until}) — ${summary}"
+  fi
+}
