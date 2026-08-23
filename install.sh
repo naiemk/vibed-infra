@@ -18,6 +18,7 @@ while [[ $# -gt 0 ]]; do
       for c in "${_comps[@]}"; do
         case "$c" in
           app|backend|api) PROFILE=api; break ;;
+          ui) PROFILE=ui; break ;;
           workers|nodes) PROFILE=nodes; break ;;
           gateway) PROFILE=gateway; break ;;
         esac
@@ -26,7 +27,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dest) DEST="$2"; shift 2 ;;
     -h|--help)
-      echo "usage: install.sh [--profile api|nodes|gateway] [--dest DIR]"
+      echo "usage: install.sh [--profile api|ui|nodes|gateway] [--dest DIR]"
       echo "env: PACKAGECONFIG_URL PRODUCT_RAW PACKAGER_RAW INFRA_PROFILE INSTALL_DIR"
       exit 0
       ;;
@@ -160,16 +161,24 @@ if [[ -n "$COMPOSE_MAINNET" ]]; then
   infra_write_template "${PRODUCT_RAW}/${COMPOSE_MAINNET}" "$DEST/${COMPOSE_MAINNET}" 0
 fi
 
-# Generic infra compose templates (optional USE_COMPOSE=1)
+# Generic infra compose templates — only when product did not supply compose in packageconfig.
 case "$ROLE" in
   backend)
-    infra_write_template "${PACKAGER_RAW}/templates/docker-compose.backend.yml" "$DEST/docker-compose.backend.yml" 0
+    if [[ -z "$COMPOSE_TPL" ]]; then
+      infra_write_template "${PACKAGER_RAW}/templates/docker-compose.backend.yml" "$DEST/docker-compose.backend.yml" 0
+    fi
+    ;;
+  ui)
     ;;
   workers)
-    infra_write_template "${PACKAGER_RAW}/templates/docker-compose.workers.yml" "$DEST/docker-compose.workers.yml" 0
+    if [[ -z "$COMPOSE_TPL" ]]; then
+      infra_write_template "${PACKAGER_RAW}/templates/docker-compose.workers.yml" "$DEST/docker-compose.workers.yml" 0
+    fi
     ;;
   gateway)
-    infra_write_template "${PACKAGER_RAW}/templates/docker-compose.gateway.yml" "$DEST/docker-compose.gateway.yml" 0
+    if [[ -z "$COMPOSE_MAINNET" && -z "$COMPOSE_TPL" ]]; then
+      infra_write_template "${PACKAGER_RAW}/templates/docker-compose.gateway.yml" "$DEST/docker-compose.gateway.yml" 0
+    fi
     ;;
 esac
 

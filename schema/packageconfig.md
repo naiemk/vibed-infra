@@ -1,88 +1,76 @@
-# packageconfig.yaml schema
+# Product config schema (four files)
 
-Product-owned file. Infra reads **only** the fields below.
+Product repos ship **templates only**. Run `package.sh` to generate committed `dist/` for VPS wget install.
 
-## Top level
+## templates/vibed-infra-config.yml
 
 ```yaml
-name: my-product          # slug for cron markers / logs
+name: my-product
 version: 1
-
-rawBase: https://raw.githubusercontent.com/org/repo/main/deploy/templates
-packagerRaw: https://raw.githubusercontent.com/naiemk/vibed-infra/main
-
+templates:
+  api: api-config.yaml
+  ui: ui-config.yaml
+  nodes: nodes-config.yaml
 network:
-  edge: my-product-edge   # shared Docker network for gateway + APIs
-
-images:
-  backend: ghcr.io/org/my-api:main
-  ui: ghcr.io/org/my-ui:main
-  worker: ghcr.io/org/my-worker:main
-  nginx: ghcr.io/org/my-nginx:main   # optional; default nginx:alpine + mounted conf
-
+  edge: my-product-edge
 autoUpdate:
-  lockFile: /var/lock/infra-auto-update.lock  # optional
+  api: { enabled: false, intervalMin: 30, offset: 0 }
+  ui: { enabled: false, intervalMin: 20, offset: 15 }
+  nodes: { enabled: false, intervalMin: 30, offset: 10 }
+  gateway: { enabled: false, intervalMin: 20, offset: 20 }
+gateway:
+  nginxImage: nginx:alpine   # optional
+  sites:
+    - host: app.example.com
+      aliases: [www.app.example.com]
+      healthPath: /api/health
+      createPath: /api/items   # optional rate-limited POST
+      tlsCertDir: /etc/letsencrypt/live/app.example.com
 ```
 
-## profiles
+Smart defaults: containers `{name}-api`, `{name}-ui`, `{name}-worker`, `{name}-gateway`.
 
-Each install directory maps to one profile key (`api`, `nodes`, `gateway`, …).
+## templates/api-config.yaml
 
 ```yaml
-profiles:
-  api:
-    role: backend           # backend | workers | gateway
-    templates:
-      config: app.yaml      # fetched from rawBase; never overwritten if exists
-      envExample: .env.api.example
-    startScript: start-api.sh    # copied from rawBase or generated
-    updateScript: update-api.sh
-    autoUpdate:
-      flag: API_AUTO_UPDATE
-      intervalEnv: API_AUTO_UPDATE_INTERVAL_MIN
-      offset: 0               # cron minute offset (api :00, nodes :10, gateway :20)
-      stopTimeoutEnv: API_STOP_TIMEOUT
-    extras: []                # optional scripts from rawBase (e.g. register-node.sh)
-
-  nodes:
-    role: workers
-    templates:
-      config: workers.yaml
-      envExample: .env.nodes.example
-      compose: docker-compose.workers.yml
-    workers:
-      services:
-        - name: worker-a
-          containerName: my-worker-a
-          roleEnv: WORKER_ROLE=a
-          activityLog: /data/logs/a.jsonl
-        - name: worker-b
-          profile: optional   # compose profile name
-    autoUpdate: { flag: NODES_AUTO_UPDATE, offset: 10, ... }
-
-  gateway:
-    role: gateway
-    mode: standalone          # standalone | bundled
-    templates:
-      envExample: .env.gateway.example
-      nginxInclude: gateway/extra.conf   # optional product snippet
-    sites:
-      - host: app.example.com
-        aliases: [www.app.example.com]
-        backend: app-api
-        backendPort: 8080
-        ui: app-ui
-        uiPort: 80
-        healthPath: /api/health      # optional; default /api/health
-        createPath: /api/items       # optional rate-limited POST; omitted if unset
-        tlsCertDir: /etc/letsencrypt/live/app.example.com
-    autoUpdate:
-      flags: [UI_AUTO_UPDATE, GATEWAY_AUTO_UPDATE]
-      offset: 20
+image: ghcr.io/org/my-api:main
+port: 8080
+config:          # opaque — written to dist/api-app.yaml
+  title: My App
 ```
 
-## Infra ignores
+## templates/ui-config.yaml
 
-- Keys inside `config` YAML templates
-- Secret names inside `.env` (opaque strings)
-- Application health-check response bodies
+```yaml
+image: ghcr.io/org/my-ui:main
+port: 80
+```
+
+## templates/nodes-config.yaml
+
+```yaml
+image: ghcr.io/org/my-worker:main
+config:          # opaque — written to dist/nodes-workers.yaml
+  intervalSec: 60
+```
+
+## dist/ (generated — commit and push)
+
+| Path | Purpose |
+|------|---------|
+| `install-api.sh` / `install-ui.sh` / `install-nodes.sh` / `install-gateway.sh` | wget entrypoints |
+| `packageconfig.yaml` | compiled for vibed-infra `install.sh` |
+| `start-*.sh` / `update-*.sh` | generic lifecycle (from packager) |
+| `gen-dev-certs.sh` | lab TLS helper |
+| `.env.*.example` | generated env templates |
+
+## Environment (install time)
+
+| Variable | Meaning |
+|----------|---------|
+| `PACKAGER_RAW` | vibed-infra root (URL or path) |
+| `PRODUCT_RAW` | dist/ URL or path |
+| `PACKAGECONFIG_URL` | defaults to `dist/packageconfig.yaml` |
+| `INFRA_PROFILE` | `api`, `ui`, `nodes`, or `gateway` |
+
+Legacy `packageconfig.yaml`-only products still work; new products use the four-file layout + `package.sh`.

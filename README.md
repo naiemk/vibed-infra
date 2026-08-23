@@ -1,59 +1,63 @@
 # vibed-infra
 
-Product-agnostic VPS deployment packager: wget installer, Docker Compose layouts, digest-gated auto-update, TLS/nginx helpers, and CI workflow templates.
+Product-agnostic VPS deployment packager: **`package.sh`** turns four YAML configs into a committed **`dist/`** tree operators wget on the box — install scripts, generic start/update helpers, env examples, and gateway nginx.
 
 Published on npm as **`vibed-infra`**.
 
-## Install (npm)
+## Product maintainer flow
+
+Author **`templates/`** in your product repo:
+
+| File | Purpose |
+|------|---------|
+| `vibed-infra-config.yml` | Product name, template refs, edge network, gateway `sites[]`, auto-update |
+| `api-config.yaml` | API image, port, opaque `config:` |
+| `ui-config.yaml` | UI image, port |
+| `nodes-config.yaml` | Worker image, opaque `config:` |
+
+Then package and commit **`dist/`**:
 
 ```bash
-npm install vibed-infra
-# or in a monorepo sibling checkout:
-# "vibed-infra": "file:../vibed-infra"
+./package.sh                  # exec vibed-infra packager → writes dist/
+git add dist && git commit && git push
 ```
 
-Resolve the packager root from Node:
+Resolve the packager from npm:
 
 ```bash
 node -e "console.log(require('path').dirname(require.resolve('vibed-infra/package.json')))"
 ```
 
-Run install locally (product `packageconfig.yaml` + templates required):
+Example product: [`examples/vps-hello`](examples/vps-hello) (`app/`, `build-images.sh`, four YAMLs, committed `dist/`).
+
+## Operator flow (wget on VPS)
 
 ```bash
-PACKAGER_RAW=/path/to/node_modules/vibed-infra \
-PACKAGECONFIG_URL=/path/to/product/deploy/packageconfig.yaml \
-PRODUCT_RAW=/path/to/product/deploy/templates \
-bash /path/to/node_modules/vibed-infra/install.sh --profile api
+wget -qO- https://raw.githubusercontent.com/ORG/REPO/main/dist/install-api.sh | bash
+wget -qO- .../dist/install-nodes.sh | bash
+wget -qO- .../dist/install-ui.sh | bash
+wget -qO- .../dist/install-gateway.sh | bash
+# edit each install dir .env, then ./start-*.sh
 ```
 
-Or use the bin:
-
-```bash
-npx vibed-infra --profile api   # still needs PACKAGECONFIG_URL / PRODUCT_RAW (or packageconfig rawBase)
-```
-
-## Install (wget, operators)
-
-```bash
-wget -qO- https://raw.githubusercontent.com/naiemk/vibed-infra/main/install.sh | \
-  env INFRA_PROFILE=api \
-      PACKAGECONFIG_URL=https://raw.githubusercontent.com/ORG/REPO/main/deploy/packageconfig.yaml \
-      PRODUCT_RAW=https://raw.githubusercontent.com/ORG/REPO/main/deploy/templates \
-      bash
-```
+| Profile | Role |
+|---------|------|
+| `api` | Backend on shared edge network |
+| `ui` | UI container (separate install) |
+| `nodes` | Worker compose on edge network |
+| `gateway` | HTTPS nginx only (API + UI must already run) |
 
 ## Layout
 
 | Path | Purpose |
 |------|---------|
+| `package.sh` / `lib/package.py` | Build product `dist/` from four YAMLs + generic templates |
 | `install.sh` | Single entrypoint (`INFRA_PROFILE` or `--profile`) |
-| `start.sh` / `update.sh` | Generic lifecycle in install dir |
 | `install-auto-update.sh` | Cron from profile flags |
-| `lib/` | fetch, env, tls, prompt, generate |
-| `templates/` | Generic compose/nginx skeletons |
-| `schema/packageconfig.md` | Schema reference |
-| `examples/vps-hello/` | Full product that installs API + worker + HTTPS gateway on a VPS |
+| `lib/` | fetch, env, tls, prompt, generate, product_config |
+| `templates/generic/` | Generic start/update/env/certs/gateway |
+| `schema/packageconfig.md` | Four-file product schema + compiled packageconfig |
+| `examples/vps-hello/` | Full example with dist e2e tests |
 | `skills/` | Cursor skills |
 | `github/workflows/` | Reusable GHCR build workflow |
 
@@ -62,10 +66,20 @@ wget -qO- https://raw.githubusercontent.com/naiemk/vibed-infra/main/install.sh |
 | Variable | Meaning |
 |----------|---------|
 | `PACKAGER_RAW` | Base URL or local path to this package root |
-| `PACKAGECONFIG_URL` | Product `packageconfig.yaml` (URL or path) |
-| `PRODUCT_RAW` | Product templates base (overrides `rawBase`; opaque to infra) |
-| `INFRA_PROFILE` | `api`, `nodes`, or `gateway` |
+| `PACKAGECONFIG_URL` | Product `packageconfig.yaml` or `dist/` URL (URL or path) |
+| `PRODUCT_RAW` | Product `dist/` base (templates + install scripts) |
+| `INFRA_PROFILE` | `api`, `ui`, `nodes`, or `gateway` |
 | `INSTALL_DIR` | Target directory (default `.`) |
+
+## Tests
+
+```bash
+npm test                        # package + dry-run all dist/install-*.sh
+npm run test:dist               # build images + e2e api, ui, nodes (sequential)
+./examples/vps-hello/test-dist.sh --profile api   # single profile
+```
+
+CI: `validate` job then parallel `dist-e2e` matrix (`api`, `ui`, `nodes`).
 
 ## Publishing (npm)
 
@@ -75,25 +89,10 @@ Every **merge to `main`** runs [Publish npm](.github/workflows/publish.yml):
 2. Commits `chore: release vibed-infra v…`, tags `v…`, pushes
 3. Runs `npm publish` (needs repo secret `NPM_TOKEN`)
 
-**Major versions** — set `version` in `package.json` yourself (e.g. `1.0.0`) and include **`[major]`** in the commit message (or PR merge commit). That publishes the pinned version with **no** automatic minor bump.
+**Major versions** — set `version` in `package.json` yourself (e.g. `1.0.0`) and include **`[major]`** in the commit message. That publishes the pinned version with **no** automatic minor bump.
 
-Manual run: Actions → Publish npm → `workflow_dispatch` (`minor` / `major` / `none`).
+Set repository secret **`NPM_TOKEN`** before the first merge to `main`.
 
-Set repository secret **`NPM_TOKEN`** (npm automation token with publish access) before the first merge to `main`.
-
-Ordinary PRs only run CI (`npm test`); they do **not** publish.
-
-## Example (VPS)
-
-[`examples/vps-hello`](examples/vps-hello) is a complete product that uses this packager: `packageconfig.yaml`, install wrappers, start/update scripts, and a tiny API/UI/worker you can build on the box.
-
-```bash
-git clone https://github.com/naiemk/vibed-infra.git
-cd vibed-infra
-./examples/vps-hello/scripts/build-images.sh
-mkdir -p ~/hello-vps/api && cd ~/hello-vps/api
-bash /path/to/vibed-infra/examples/vps-hello/install/install-api.sh
-# edit .env, then ./start-hello-api.sh
-```
+Ordinary PRs only run CI (`npm test` + dist e2e); they do **not** publish.
 
 Runbook: [`examples/vps-hello/README.md`](examples/vps-hello/README.md).

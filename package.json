@@ -16,6 +16,7 @@
   },
   "files": [
     "install.sh",
+    "package.sh",
     "start.sh",
     "update.sh",
     "install-auto-update.sh",
@@ -29,6 +30,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "test": "bash scripts/validate-package.sh"
+    "test": "bash scripts/validate-package.sh",
+    "test:dist": "bash examples/vps-hello/test-dist.sh --profile api && bash examples/vps-hello/test-dist.sh --profile ui && bash examples/vps-hello/test-dist.sh --profile nodes"
   }
 }

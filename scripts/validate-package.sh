@@ -5,64 +5,62 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 test -x install.sh
+test -x package.sh
 test -f lib/fetch.sh
 test -f lib/load_config.py
-test -f templates/docker-compose.backend.yml
+test -f lib/product_config.py
+test -f lib/package.py
+test -f templates/generic/start-api.sh
 test -f schema/packageconfig.md
 
-# install.sh must parse
 bash -n install.sh
 bash -n start.sh
 bash -n update.sh
+bash -n package.sh
 
-# generate.py loads
-python3 lib/generate.py --help >/dev/null 2>&1 || python3 -c "
+python3 -c "
 import sys
 from pathlib import Path
 sys.path.insert(0, 'lib')
-from load_config import load_packageconfig
-print('load_config ok')
+from product_config import load_product, compile_packageconfig
+p = load_product(Path('examples/vps-hello'))
+c = compile_packageconfig(p, raw_base='/dist')
+assert c['profiles']['api']['role'] == 'backend'
+assert c['profiles']['ui']['role'] == 'ui'
+assert c['profiles']['gateway']['sites'][0]['host'] == 'hello.example.com'
+print('product_config ok')
 "
 
-# Example product: stdlib YAML + generated gateway conf + install dry-run
-python3 - <<'PY'
-from pathlib import Path
-import sys
-sys.path.insert(0, "lib")
-from load_config import _parse_minimal, get_profile
+bash examples/vps-hello/package.sh
+test -f examples/vps-hello/dist/install-api.sh
+test -f examples/vps-hello/dist/packageconfig.yaml
+test -x examples/vps-hello/dist/start-api.sh
 
-text = Path("examples/vps-hello/packageconfig.yaml").read_text(encoding="utf-8")
-conf = _parse_minimal(text)
-assert get_profile(conf, "api")["role"] == "backend"
-assert get_profile(conf, "nodes")["role"] == "workers"
-assert get_profile(conf, "gateway")["sites"][0]["host"] == "hello.example.com"
-print("example packageconfig (minimal parser) ok")
-PY
+for prof in api ui nodes gateway; do
+  DEST="${TMPDIR:-/tmp}/hello-dist-dry-${prof}-$$"
+  mkdir -p "$DEST"
+  PACKAGER_RAW="$ROOT" INSTALL_DIR="$DEST" bash "examples/vps-hello/dist/install-${prof}.sh"
+  test -f "$DEST/.env"
+  test -x "$DEST/start-${prof}.sh" || test -x "$DEST/start-api.sh"
+  rm -rf "$DEST"
+done
 
-python3 lib/generate.py examples/vps-hello/packageconfig.yaml --profile gateway \
+python3 lib/generate.py examples/vps-hello/dist/packageconfig.yaml --profile gateway \
   -o /tmp/hello-vps-domains.conf
 grep -q "hello.example.com" /tmp/hello-vps-domains.conf
-grep -q "hello-api:8080" /tmp/hello-vps-domains.conf
+grep -q "hello-vps-api:8080" /tmp/hello-vps-domains.conf
 
 for f in \
-  examples/vps-hello/install.sh \
-  examples/vps-hello/install/packager.sh \
-  examples/vps-hello/install/install-api.sh \
-  examples/vps-hello/install/install-nodes.sh \
-  examples/vps-hello/install/install-gateway.sh \
-  examples/vps-hello/templates/start-hello-api.sh \
-  examples/vps-hello/templates/start-hello-nodes.sh \
-  examples/vps-hello/templates/start-hello-gateway.sh \
-  examples/vps-hello/templates/update-hello-api.sh \
-  examples/vps-hello/templates/update-hello-nodes.sh \
-  examples/vps-hello/templates/update-hello-gateway.sh \
-  examples/vps-hello/scripts/try-install.sh \
-  examples/vps-hello/scripts/build-images.sh \
-  examples/vps-hello/scripts/gen-dev-certs.sh
+  examples/vps-hello/package.sh \
+  examples/vps-hello/build-images.sh \
+  examples/vps-hello/test-dist.sh \
+  examples/vps-hello/test/run.sh \
+  examples/vps-hello/dist/install-api.sh \
+  examples/vps-hello/dist/install-ui.sh \
+  examples/vps-hello/dist/install-nodes.sh \
+  examples/vps-hello/dist/install-gateway.sh
 do
   bash -n "$f"
 done
-
-bash examples/vps-hello/scripts/try-install.sh
 
 echo "vibed-infra package validation OK"

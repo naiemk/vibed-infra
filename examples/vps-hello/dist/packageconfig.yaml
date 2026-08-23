@@ -1,0 +1,79 @@
+name: hello-vps
+version: 1
+rawBase: /workspaces/vibed-infra/examples/vps-hello/dist
+packagerRaw: /workspaces/vibed-infra
+network:
+  edge: hello-vps-edge
+images:
+  backend: "hello-vps-api:local"
+  ui: "hello-vps-ui:local"
+  worker: "hello-vps-worker:local"
+  nginx: "nginx:alpine"
+autoUpdate:
+  lockFile: /var/lock/infra-auto-update.lock
+profiles:
+  api:
+    role: backend
+    templates:
+      config: api-app.yaml
+      envExample: .env.api.example
+    startScript: start-api.sh
+    updateScript: update-api.sh
+    autoUpdate:
+      flag: API_AUTO_UPDATE
+      intervalEnv: API_AUTO_UPDATE_INTERVAL_MIN
+      offset: 0
+      stopTimeoutEnv: API_STOP_TIMEOUT
+  ui:
+    role: ui
+    templates:
+      envExample: .env.ui.example
+    startScript: start-ui.sh
+    updateScript: update-ui.sh
+    autoUpdate:
+      flag: UI_AUTO_UPDATE
+      intervalEnv: UI_AUTO_UPDATE_INTERVAL_MIN
+      offset: 15
+      stopTimeoutEnv: UI_STOP_TIMEOUT
+  nodes:
+    role: workers
+    templates:
+      config: nodes-workers.yaml
+      envExample: .env.nodes.example
+      compose: docker-compose.workers.yml
+    startScript: start-nodes.sh
+    updateScript: update-nodes.sh
+    autoUpdate:
+      flag: NODES_AUTO_UPDATE
+      intervalEnv: NODES_AUTO_UPDATE_INTERVAL_MIN
+      offset: 10
+      stopTimeoutEnv: NODES_STOP_TIMEOUT
+    workers:
+      services:
+        - name: worker
+          containerName: hello-vps-worker
+          roleEnv: WORKER_ROLE=heartbeat
+  gateway:
+    role: gateway
+    mode: standalone
+    templates:
+      envExample: .env.gateway.example
+    startScript: start-gateway.sh
+    updateScript: update-gateway.sh
+    autoUpdate:
+      flags:
+        - GATEWAY_AUTO_UPDATE
+      intervalEnv: GATEWAY_AUTO_UPDATE_INTERVAL_MIN
+      offset: 20
+      stopTimeoutEnv: GATEWAY_STOP_TIMEOUT
+    sites:
+      - host: hello.example.com
+        backend: hello-vps-api
+        backendPort: 8080
+        ui: hello-vps-ui
+        uiPort: 80
+        healthPath: /api/health
+        tlsCertDir: /etc/letsencrypt/live/hello.example.com
+        aliases:
+        - www.hello.example.com
+        createPath: /api/notes

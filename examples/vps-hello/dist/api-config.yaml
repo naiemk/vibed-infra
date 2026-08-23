@@ -1,0 +1,4 @@
+image: hello-vps-api:local
+port: 8080
+config:
+  title: Hello VPS
