@@ -1,0 +1,34 @@
+{
+  "name": "vibed-infra",
+  "version": "0.1.0",
+  "description": "Product-agnostic VPS packager: wget install, Docker Compose, TLS/nginx, auto-update",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/naiemk/vibed-infra.git"
+  },
+  "bugs": {
+    "url": "https://github.com/naiemk/vibed-infra/issues"
+  },
+  "homepage": "https://github.com/naiemk/vibed-infra#readme",
+  "bin": {
+    "vibed-infra": "./install.sh"
+  },
+  "files": [
+    "install.sh",
+    "start.sh",
+    "update.sh",
+    "install-auto-update.sh",
+    "lib",
+    "templates",
+    "schema",
+    "github",
+    "skills"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "bash scripts/validate-package.sh"
+  }
+}
