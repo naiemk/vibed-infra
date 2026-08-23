@@ -1,0 +1,76 @@
+# Example product — vibed-infra packager contract.
+# Infra reads only these fields; app YAML and .env values are opaque.
+
+name: hello-vps
+version: 1
+
+rawBase: https://raw.githubusercontent.com/naiemk/vibed-infra/main/examples/vps-hello/templates
+packagerRaw: https://raw.githubusercontent.com/naiemk/vibed-infra/main
+
+network:
+  edge: hello-vps-edge
+
+images:
+  backend: hello-vps-api:local
+  ui: hello-vps-ui:local
+  worker: hello-vps-worker:local
+  nginx: nginx:alpine
+
+autoUpdate:
+  lockFile: /var/lock/infra-auto-update.lock
+
+profiles:
+  api:
+    role: backend
+    templates:
+      config: app.yaml
+      envExample: .env.api.example
+    startScript: start-hello-api.sh
+    updateScript: update-hello-api.sh
+    autoUpdate:
+      flag: API_AUTO_UPDATE
+      intervalEnv: API_AUTO_UPDATE_INTERVAL_MIN
+      offset: 0
+      stopTimeoutEnv: API_STOP_TIMEOUT
+
+  nodes:
+    role: workers
+    templates:
+      config: workers.yaml
+      envExample: .env.nodes.example
+      compose: docker-compose.hello-workers.yml
+    startScript: start-hello-nodes.sh
+    updateScript: update-hello-nodes.sh
+    autoUpdate:
+      flag: NODES_AUTO_UPDATE
+      intervalEnv: NODES_AUTO_UPDATE_INTERVAL_MIN
+      offset: 10
+      stopTimeoutEnv: NODES_STOP_TIMEOUT
+    workers:
+      services:
+        - name: heartbeat
+          containerName: hello-worker-heartbeat
+          roleEnv: WORKER_ROLE=heartbeat
+
+  gateway:
+    role: gateway
+    mode: standalone
+    templates:
+      envExample: .env.gateway.example
+    startScript: start-hello-gateway.sh
+    updateScript: update-hello-gateway.sh
+    autoUpdate:
+      flags: [UI_AUTO_UPDATE, GATEWAY_AUTO_UPDATE]
+      intervalEnv: GATEWAY_AUTO_UPDATE_INTERVAL_MIN
+      offset: 20
+      stopTimeoutEnv: GATEWAY_STOP_TIMEOUT
+    sites:
+      - host: hello.example.com
+        aliases: [www.hello.example.com]
+        backend: hello-api
+        backendPort: 8080
+        ui: hello-ui
+        uiPort: 80
+        healthPath: /api/health
+        createPath: /api/notes
+        tlsCertDir: /etc/letsencrypt/live/hello.example.com

@@ -24,10 +24,12 @@ if [[ -z "$ROLE" && -n "$PROFILE" ]]; then
   esac
 fi
 if [[ -z "$ROLE" ]]; then
-  if [[ -f start-onchain-invoice-gateway.sh ]]; then ROLE=gateway
-  elif [[ -f start-onchain-invoice-nodes.sh ]]; then ROLE=workers
-  elif [[ -f start-onchain-invoice-api.sh ]]; then ROLE=backend
-  else ROLE=backend
+  if compgen -G "start-*-gateway.sh" >/dev/null || [[ -f docker-compose.gateway.yml ]]; then
+    ROLE=gateway
+  elif compgen -G "start-*-nodes.sh" >/dev/null || [[ -f docker-compose.workers.yml ]]; then
+    ROLE=workers
+  else
+    ROLE=backend
   fi
 fi
 
@@ -114,7 +116,7 @@ else
   echo "Auto-update disabled for $ROLE"
 fi
 
-# Legacy tc-* cron cleanup marker compatibility
+# Drop leftover cron markers from older product-specific installers
 MARKER_LEGACY="# onchain-invoice-auto-update:${ROLE}:${SCRIPT_DIR}"
 if command -v crontab >/dev/null 2>&1; then
   existing="$(crontab -l 2>/dev/null || true)"

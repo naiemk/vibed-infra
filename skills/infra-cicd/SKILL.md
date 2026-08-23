@@ -10,39 +10,38 @@ description: >-
 
 ## Image build (GHCR)
 
-Use reusable workflow [`infra/github/workflows/docker-build-reusable.yml`](../../infra/github/workflows/docker-build-reusable.yml):
+Use reusable workflow [`github/workflows/docker-build-reusable.yml`](../../github/workflows/docker-build-reusable.yml):
 
 ```yaml
 jobs:
   images:
-    uses: ./infra/github/workflows/docker-build-reusable.yml
+    uses: naiemk/vibed-infra/.github/workflows/docker-build-reusable.yml@main
     with:
-      images: |
-        api=deploy/Dockerfile.api=ghcr.io/${{ github.repository_owner }}/my-api
-        ui=deploy/Dockerfile.ui=ghcr.io/${{ github.repository_owner }}/my-ui
-        worker=deploy/Dockerfile.worker=ghcr.io/${{ github.repository_owner }}/my-worker
+      dockerfile: deploy/Dockerfile.api
+      image: ghcr.io/${{ github.repository_owner }}/my-api
     secrets: inherit
 ```
 
-Tags: `:main`, `main-<sha>`, semver on tag push.
+Or copy the workflow into the product repo. Tags: `:main`, `main-<sha>`, semver on tag push.
 
 ## Install e2e (optional job)
 
 1. Serve repo over HTTP (Python `http.server` at repo root or multi-path).
-2. Set `PACKAGER_RAW=http://127.0.0.1:PORT/infra` and `PACKAGECONFIG_URL=.../deploy/packageconfig.yaml`.
-3. Run `wget | bash deploy/install/install-api.sh` into temp dir.
-4. Fill `.env` with test secrets; `./start-*.sh`; curl health.
+2. Set `PACKAGER_RAW` to the packager (npm path, git checkout, or HTTP) and `PACKAGECONFIG_URL=.../deploy/packageconfig.yaml`.
+3. Optionally set `PRODUCT_RAW` if it should differ from `packageconfig.rawBase`.
+4. Run the product `install-api.sh` into a temp dir.
+5. Fill `.env` with test secrets; `./start-*.sh`; curl health.
 
-See [`system-tests/scripts/run-install-e2e.sh`](../../system-tests/scripts/run-install-e2e.sh).
+See [`examples/vps-hello/scripts/try-install.sh`](../../examples/vps-hello/scripts/try-install.sh) for a packager-only dry-run.
 
 ## packageconfig in CI
 
 - `IMAGE_TAG=main` in system tests matches GHCR `:main` from default branch push.
-- Keep `rawBase` pointing at `main` branch raw URLs for operator wget; dev branches use `ONCHAIN_INVOICE_REF=<branch>`.
+- Keep `rawBase` pointing at `main` branch raw URLs for operator wget; override with `PRODUCT_RAW` on a feature branch.
 
 ## Checklist
 
 - [ ] Dockerfiles under `deploy/`
 - [ ] `deploy/packageconfig.yaml` images match GHCR names
-- [ ] `npm run system-test:install` or workflow job passes
+- [ ] Install dry-run or workflow job passes
 - [ ] Secrets not in templates — only `.env.example` placeholders

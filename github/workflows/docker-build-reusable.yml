@@ -7,7 +7,7 @@
 #       uses: ./infra/github/workflows/docker-build-reusable.yml
 #       with:
 #         dockerfile: deploy/Dockerfile.api
-#         image: ghcr.io/${{ github.repository_owner }}/trustless-commerce-api
+#         image: ghcr.io/${{ github.repository_owner }}/my-api
 #         context: .
 #       secrets: inherit
 

@@ -1,0 +1,5 @@
+.run/
+certs/
+data/
+logs/
+.env

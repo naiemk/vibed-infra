@@ -37,17 +37,16 @@ sudo certbot certonly --standalone \
   -d app-a.example.com -d app-b.example.com -d www.app-b.example.com
 ```
 
-Set `TLS_FULLCHAIN` / `TLS_PRIVKEY` in gateway `.env`.
+Set `TLS_FULLCHAIN` / `TLS_PRIVKEY` in gateway `.env`. Defaults come from the first `sites[].tlsCertDir` (or `/etc/letsencrypt/live/<host>`).
 
 6. **Auto-update** — stagger cron: APIs :00, workers :10, gateway :20 (infra default).
 
-## Trustless Commerce dual-domain
+## Dual-domain on one host
 
-- `testnet-api` + `testnet-ui` + `mainnet-api` + `mainnet-ui` on `trustless-commerce-edge`.
-- Gateway profile in [`deploy/packageconfig.yaml`](../../deploy/packageconfig.yaml) `sites[]`.
+Two APIs + two UIs on one edge network, one nginx `sites[]` list. See [`examples/vps-hello/packageconfig.yaml`](../../examples/vps-hello/packageconfig.yaml) for a single-site starting point.
 
 ## Pitfalls
 
-- API must listen on container name resolvable by nginx (`testnet-api:8080`, not `localhost`).
+- API must listen on a container name resolvable by nginx (`app-api:8080`, not `localhost`).
 - Do not bind host port 443 twice — only gateway publishes 443.
 - Pull UI/nginx **before** stop on gateway update (infra update scripts do this).
