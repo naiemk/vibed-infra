@@ -1,0 +1,38 @@
+name: hello-vps
+version: 1
+
+templates:
+  api: api-config.yaml
+  ui: ui-config.yaml
+  nodes: nodes-config.yaml
+
+network:
+  edge: hello-vps-edge
+
+autoUpdate:
+  api:
+    enabled: false
+    intervalMin: 30
+    offset: 0
+  ui:
+    enabled: false
+    intervalMin: 20
+    offset: 15
+  nodes:
+    enabled: false
+    intervalMin: 30
+    offset: 10
+  gateway:
+    enabled: false
+    intervalMin: 20
+    offset: 20
+
+gateway:
+  nginxImage: nginx:alpine
+  sites:
+    - host: hello.example.com
+      aliases:
+        - www.hello.example.com
+      healthPath: /api/health
+      createPath: /api/notes
+      tlsCertDir: /etc/letsencrypt/live/hello.example.com

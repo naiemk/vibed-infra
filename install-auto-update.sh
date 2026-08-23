@@ -19,14 +19,17 @@ fi
 if [[ -z "$ROLE" && -n "$PROFILE" ]]; then
   case "$PROFILE" in
     api) ROLE=backend ;;
+    ui) ROLE=ui ;;
     nodes) ROLE=workers ;;
     gateway) ROLE=gateway ;;
   esac
 fi
 if [[ -z "$ROLE" ]]; then
-  if compgen -G "start-*-gateway.sh" >/dev/null || [[ -f docker-compose.gateway.yml ]]; then
+  if [[ -f start-gateway.sh ]] || compgen -G "start-*-gateway.sh" >/dev/null || [[ -f docker-compose.gateway.yml ]]; then
     ROLE=gateway
-  elif compgen -G "start-*-nodes.sh" >/dev/null || [[ -f docker-compose.workers.yml ]]; then
+  elif [[ -f start-ui.sh ]] || compgen -G "start-*-ui.sh" >/dev/null; then
+    ROLE=ui
+  elif [[ -f start-nodes.sh ]] || compgen -G "start-*-nodes.sh" >/dev/null || [[ -f docker-compose.workers.yml ]]; then
     ROLE=workers
   else
     ROLE=backend
@@ -46,6 +49,11 @@ case "$ROLE" in
     if role_auto_update_on API_AUTO_UPDATE; then cron_enabled=1; fi
     INTERVAL_MIN="${API_AUTO_UPDATE_INTERVAL_MIN:-30}"
     CRON_OFFSET=0
+    ;;
+  ui)
+    if role_auto_update_on UI_AUTO_UPDATE; then cron_enabled=1; fi
+    INTERVAL_MIN="${UI_AUTO_UPDATE_INTERVAL_MIN:-20}"
+    CRON_OFFSET=15
     ;;
   workers|nodes)
     ROLE=nodes

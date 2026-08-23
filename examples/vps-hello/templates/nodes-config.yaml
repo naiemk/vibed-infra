@@ -1,0 +1,4 @@
+image: hello-vps-worker:local
+config:
+  intervalSec: 60
+  role: heartbeat

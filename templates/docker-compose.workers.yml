@@ -1,5 +1,8 @@
-# Generic worker runners — customize via packageconfig workers.services[].
-# Product install copies a concrete compose (e.g. docker-compose.sweepers.yml) from templates/.
+# Generic worker runners — join the product edge network (API must already be there).
+networks:
+  edge:
+    external: true
+    name: ${DOCKER_NETWORK:-app-edge}
 
 services:
   worker:
@@ -10,8 +13,12 @@ services:
     env_file: .env
     environment:
       WORKER_CONFIG: /config/workers.yaml
+      API_URL: ${API_URL:-http://app-api:8080}
+      INTERVAL_SEC: ${INTERVAL_SEC:-60}
     volumes:
       - ./logs:/data/logs
       - ${CONFIG_FILE:-./workers.yaml}:/config/workers.yaml:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - edge

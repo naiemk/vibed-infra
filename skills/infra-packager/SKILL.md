@@ -1,8 +1,8 @@
 ---
 name: infra-packager
 description: >-
-  Wire a new product to the infra VPS packager: packageconfig.yaml, Docker images,
-  deploy/templates, thin install wrappers, and CI. Use when adding Backend/UI/worker
+  Wire a new product to the infra VPS packager: four YAML configs, package.sh →
+  committed dist/, Docker images, and CI. Use when adding Backend/UI/worker
   deploy to a repo or migrating from ad-hoc deploy/install scripts.
 ---
 
@@ -11,44 +11,46 @@ description: >-
 ## When to use
 
 - New repo needs wget VPS install (backend + UI + workers + HTTPS gateway)
-- Splitting deploy scripts into reusable vibed-infra + product templates
+- Replacing hand-written install/start/update scripts with generated `dist/`
 
 ## Steps
 
-1. **Depend on** [`vibed-infra`](https://www.npmjs.com/package/vibed-infra) (`npm install vibed-infra`) or wget `install.sh` from this repo. Set `packagerRaw` in packageconfig.
+1. **Depend on** [`vibed-infra`](https://www.npmjs.com/package/vibed-infra) or clone this repo for `package.sh`.
 
-2. **Create** `deploy/packageconfig.yaml` — see [`schema/packageconfig.md`](../../schema/packageconfig.md) and the VPS example [`examples/vps-hello/packageconfig.yaml`](../../examples/vps-hello/packageconfig.yaml).
+2. **Create** `templates/` with four files — see [`schema/packageconfig.md`](../../schema/packageconfig.md) and [`examples/vps-hello/templates/`](../../examples/vps-hello/templates/).
 
-3. **Add templates** under `deploy/templates/`:
-   - `.env.*.example` (secrets — opaque to infra)
-   - App config YAML (opaque)
-   - `start-*.sh` / `update-*.sh` (or use generic `start.sh`)
-   - Worker `docker-compose.*.yml` if multi-runner
-
-4. **Thin wrappers** (set profile + product URLs):
+3. **Add** a tiny product `package.sh`:
 
 ```bash
-# deploy/install/install-api.sh
-export INFRA_PROFILE=api
-export PACKAGECONFIG_URL=https://raw.githubusercontent.com/ORG/REPO/main/deploy/packageconfig.yaml
-export PRODUCT_RAW=https://raw.githubusercontent.com/ORG/REPO/main/deploy/templates
-wget -qO- https://raw.githubusercontent.com/naiemk/vibed-infra/main/install.sh | bash
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+PACKAGER="$(node -e "console.log(require('path').dirname(require.resolve('vibed-infra/package.json')))")"
+exec bash "$PACKAGER/package.sh" --product "$ROOT" --out "$ROOT/dist"
 ```
 
-5. **Build images** — Dockerfiles in `deploy/`; push to GHCR; reference in `packageconfig.images`.
+4. **Build images** — Dockerfiles in `app/`; tag `:local` for dev or push to GHCR for prod; reference image names in `*-config.yaml`.
 
-6. **CI** — use [`github/workflows/docker-build-reusable.yml`](../../github/workflows/docker-build-reusable.yml); add install e2e serving the packager + `deploy/templates/` over HTTP.
-
-7. **VPS** — per component directory:
+5. **Package and commit** `dist/`:
 
 ```bash
-mkdir -p ~/app/api && cd ~/app/api
-wget -qO- .../deploy/install/install-api.sh | bash
-# edit .env, then ./start-api.sh (or ./start.sh)
+./package.sh
+git add dist && git commit && git push
+```
+
+6. **CI** — `npm test` (packager validate + install dry-run); optional `test-dist.sh --profile api|ui|nodes` after building images. See [`examples/vps-hello/test-dist.sh`](../../examples/vps-hello/test-dist.sh).
+
+7. **VPS** — operators wget from your repo `dist/`:
+
+```bash
+wget -qO- .../dist/install-api.sh | bash
+# edit .env, ./start-api.sh
+wget -qO- .../dist/install-ui.sh | bash
+wget -qO- .../dist/install-nodes.sh | bash
+wget -qO- .../dist/install-gateway.sh | bash
 ```
 
 ## Rules
 
 - Infra never parses app config keys — only image names, ports, volume paths, site hostnames.
 - Never overwrite existing `.env` on re-install.
-- Gateway container names must match `sites[].backend` / `sites[].ui` on shared `network.edge`.
+- Gateway container names in `gateway.sites[]` must match running API/UI container names on `network.edge`.
+- UI is a separate profile; gateway is nginx-only and does not start the UI.

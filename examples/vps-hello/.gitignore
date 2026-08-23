@@ -1,5 +1,2 @@
-.run/
+# dist/ is committed — operators wget from git. Ignore runtime only.
 certs/
-data/
-logs/
-.env

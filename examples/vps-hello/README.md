@@ -1,136 +1,53 @@
 # Example: VPS stack with vibed-infra
 
-A complete product that **uses** [`vibed-infra`](../..) to install API + worker + HTTPS gateway on a VPS. The app itself is a tiny notes board so the packager contract is the point, not the product.
+Minimal product source — **`package.sh`** writes committed **`dist/`** for wget VPS install.
 
-| Profile | Role | What it starts |
-|---------|------|----------------|
-| `api` | backend | Notes API (`hello-api:8080`) on `hello-vps-edge` |
-| `nodes` | workers | Heartbeat worker that POSTs `/api/notes` |
-| `gateway` | gateway | Static UI + nginx on 80/443 |
+## Source (you edit)
 
-Same layout a real product keeps under `deploy/`: `packageconfig.yaml`, `templates/`, thin `install/*.sh` wrappers.
-
-## VPS runbook
-
-One Ubuntu/Debian box with Docker. DNS A records for `hello.example.com` and `www.hello.example.com` (or edit `packageconfig.yaml` `sites[]` / the generated `gateway/conf.d/domains.conf` after install).
-
-### 1. Prereqs
-
-```bash
-sudo apt-get update
-sudo apt-get install -y docker.io docker-compose-v2 certbot python3 openssl
-sudo systemctl enable --now docker
-sudo systemctl disable --now nginx || true   # free :80 / :443
+```
+app/                          # Dockerfiles + app code
+build-images.sh               # docker build :local tags
+package.sh                    # proxy to vibed-infra packager
+templates/
+  api-config.yaml             # image, port, opaque config
+  ui-config.yaml
+  nodes-config.yaml
+  vibed-infra-config.yml      # network, gateway sites, auto-update
 ```
 
-### 2. Build images on the box
-
-Images default to `:local` so you do not need GHCR for this example.
+## Maintainer flow
 
 ```bash
-git clone https://github.com/naiemk/vibed-infra.git
-cd vibed-infra
-./examples/vps-hello/scripts/build-images.sh
+./build-images.sh             # optional locally
+./package.sh                  # writes dist/
+git add dist && git commit && git push
 ```
 
-Point `images:` in `packageconfig.yaml` at GHCR (and set `*_AUTO_UPDATE=1`) when you publish.
-
-### 3. Install each profile into its own directory
+## Operator flow (VPS)
 
 ```bash
-mkdir -p ~/hello-vps/{api,nodes,gateway}
-
-cd ~/hello-vps/api
-bash /path/to/vibed-infra/examples/vps-hello/install/install-api.sh
-
-cd ~/hello-vps/nodes
-bash /path/to/vibed-infra/examples/vps-hello/install/install-nodes.sh
-
-cd ~/hello-vps/gateway
-bash /path/to/vibed-infra/examples/vps-hello/install/install-gateway.sh
+wget -qO- https://raw.githubusercontent.com/ORG/REPO/main/dist/install-api.sh | bash
+wget -qO- .../dist/install-ui.sh | bash
+wget -qO- .../dist/install-nodes.sh | bash
+wget -qO- .../dist/install-gateway.sh | bash
+# edit each .env, then ./start-*.sh in each install dir
 ```
 
-Or wget after this tree is on `main`:
+| Profile | Starts |
+|---------|--------|
+| `api` | Notes API on edge network |
+| `ui` | Static UI container |
+| `nodes` | Heartbeat worker → API |
+| `gateway` | HTTPS nginx (UI + API must already run) |
+
+Lab TLS: `./gen-dev-certs.sh` in the gateway install dir (copied from dist).
+
+## Tests
 
 ```bash
-cd ~/hello-vps/api
-wget -qO- https://raw.githubusercontent.com/naiemk/vibed-infra/main/examples/vps-hello/install/install-api.sh | bash
+./test-dist.sh --profile api
+./test-dist.sh --profile ui
+./test-dist.sh --profile nodes
 ```
 
-Edit each `.env`: set a real `API_TOKEN` (same value on API + workers). Change `sites[].host` / TLS paths if your domain is not `hello.example.com`.
-
-### 4. TLS
-
-Production (port 80 free, DNS live):
-
-```bash
-sudo mkdir -p /var/www/certbot
-sudo certbot certonly --standalone \
-  -d hello.example.com -d www.hello.example.com
-```
-
-Set `TLS_FULLCHAIN` / `TLS_PRIVKEY` in `~/hello-vps/gateway/.env` to the Let's Encrypt files.
-
-Lab box without public DNS:
-
-```bash
-./examples/vps-hello/scripts/gen-dev-certs.sh ~/hello-vps/gateway/certs
-# then point TLS_* in gateway .env at those pems
-```
-
-### 5. Start (API first — it owns the edge network)
-
-```bash
-cd ~/hello-vps/api && ./start-hello-api.sh
-cd ~/hello-vps/nodes && ./start-hello-nodes.sh
-cd ~/hello-vps/gateway && ./start-hello-gateway.sh
-```
-
-```bash
-curl -s http://127.0.0.1:8080/api/health
-curl -fk https://127.0.0.1/api/health -H 'Host: hello.example.com'
-```
-
-Open `https://hello.example.com`. To post from the UI when `API_TOKEN` is set, add `?token=…` to the URL.
-
-## What install copies
-
-`vibed-infra/install.sh` reads this example's `packageconfig.yaml` and writes into `INSTALL_DIR`:
-
-- `.env` from the profile `.env.*.example` (never overwritten if it already exists)
-- App YAML + start/update scripts from `templates/`
-- Generic compose skeletons from the packager
-- Generated `gateway/conf.d/domains.conf` from `sites[]`
-
-Then `./install-auto-update.sh` installs cron when the profile `*_AUTO_UPDATE` flag is on.
-
-## Local checkout (no wget)
-
-From this repo:
-
-```bash
-./examples/vps-hello/scripts/try-install.sh
-```
-
-That runs the real packager into a temp dir and checks the three profiles landed. Docker is not required.
-
-To bring the stack up on the same machine you cloned on:
-
-```bash
-./examples/vps-hello/scripts/build-images.sh
-HELLO_TRY_KEEP=1 HELLO_TRY_DIR=/tmp/hello-vps ./examples/vps-hello/scripts/try-install.sh
-./examples/vps-hello/scripts/gen-dev-certs.sh /tmp/hello-vps/gateway/certs
-# set TLS_* in /tmp/hello-vps/gateway/.env to those certs, then:
-/tmp/hello-vps/api/start-hello-api.sh
-/tmp/hello-vps/nodes/start-hello-nodes.sh
-/tmp/hello-vps/gateway/start-hello-gateway.sh
-```
-
-## Copy this into your product
-
-1. Copy `packageconfig.yaml`, `templates/`, and `install/` into your repo as `deploy/`.
-2. Change `name`, `images`, `network.edge`, and `sites[]`.
-3. Swap `app/` for your Dockerfiles; keep secrets only in `.env.example` placeholders.
-4. Thin wrappers stay ~15 lines — they only set `INFRA_PROFILE` + `PACKAGECONFIG_URL` and exec `vibed-infra/install.sh`.
-
-Schema: [`schema/packageconfig.md`](../../schema/packageconfig.md). Onboarding skill: [`skills/infra-packager/SKILL.md`](../../skills/infra-packager/SKILL.md).
+CI runs the same three profiles in parallel after `npm test`.

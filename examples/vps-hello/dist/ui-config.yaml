@@ -1,0 +1,2 @@
+image: hello-vps-ui:local
+port: 80

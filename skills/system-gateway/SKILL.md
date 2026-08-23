@@ -9,44 +9,41 @@ description: >-
 
 ## Model
 
-- One **gateway** install dir per host (or per edge): nginx on ports 80/443.
-- Each product **backend** + **UI** containers join the same Docker network (`network.edge` from each product's packageconfig — use one shared name, e.g. `vps-edge`).
-- Gateway `sites[]` in one product's packageconfig **or** a dedicated `gateway-only` packageconfig lists all vhosts.
+- One **gateway** install dir per host: nginx on ports 80/443 (`install-gateway.sh` from product `dist/`).
+- Each product **API** + **UI** join the same Docker network (`network.edge` in `vibed-infra-config.yml`).
+- Gateway `gateway.sites[]` lists vhosts → generated `gateway/conf.d/domains.conf` on install.
 
 ## Steps
 
 1. Pick shared network: `DOCKER_NETWORK=vps-edge` in every product `.env`.
 
-2. Install APIs/UIs with distinct container names:
-   - `product-a-api`, `product-a-ui`
-   - `product-b-api`, `product-b-ui`
+2. Install APIs/UIs with distinct container names (defaults: `{name}-api`, `{name}-ui`).
 
 3. Install gateway once:
 
 ```bash
-mkdir -p ~/vps/gateway && cd ~/vps/gateway
-wget -qO- .../install-gateway.sh | bash
+wget -qO- .../dist/install-gateway.sh | bash
 ```
 
-4. Edit gateway `packageconfig` `sites[]` (or merge generated `gateway/conf.d/domains.conf`) so each `host` maps to the correct `backend` + `ui` container names.
+4. Ensure `gateway.sites[]` `backend` / `ui` match running container names (re-run `./package.sh` if you rename containers).
 
-5. **TLS** — single SAN cert or per-host certs:
+5. **TLS** — lab: `./gen-dev-certs.sh` from `dist/`, set paths in gateway `.env`. Production:
 
 ```bash
-sudo certbot certonly --standalone \
-  -d app-a.example.com -d app-b.example.com -d www.app-b.example.com
+sudo certbot certonly --standalone -d app.example.com
 ```
 
-Set `TLS_FULLCHAIN` / `TLS_PRIVKEY` in gateway `.env`. Defaults come from the first `sites[].tlsCertDir` (or `/etc/letsencrypt/live/<host>`).
+Set `TLS_FULLCHAIN` / `TLS_PRIVKEY` in gateway `.env`, then `./start-gateway.sh` (reloads certs into the gateway volume).
 
-6. **Auto-update** — stagger cron: APIs :00, workers :10, gateway :20 (infra default).
+6. **Auto-update** — stagger cron: API :00, UI :15, workers :10, gateway :20 (infra defaults).
 
 ## Dual-domain on one host
 
-Two APIs + two UIs on one edge network, one nginx `sites[]` list. See [`examples/vps-hello/packageconfig.yaml`](../../examples/vps-hello/packageconfig.yaml) for a single-site starting point.
+List multiple entries under `gateway.sites[]` in `vibed-infra-config.yml`. See [`examples/vps-hello/templates/vibed-infra-config.yml`](../../examples/vps-hello/templates/vibed-infra-config.yml).
 
 ## Pitfalls
 
-- API must listen on a container name resolvable by nginx (`app-api:8080`, not `localhost`).
+- API must listen on a container name resolvable by nginx (`hello-vps-api:8080`, not `localhost`).
 - Do not bind host port 443 twice — only gateway publishes 443.
-- Pull UI/nginx **before** stop on gateway update (infra update scripts do this).
+- Gateway does not start UI; install UI separately before gateway.
+- Re-run `./start-gateway.sh` after cert renewal so nginx picks up new cert files.

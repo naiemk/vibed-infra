@@ -15,3 +15,14 @@ jobs:
         with:
           node-version: "22"
       - run: npm test
+
+  dist-e2e:
+    needs: validate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        profile: [api, ui, nodes]
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash examples/vps-hello/test-dist.sh --profile ${{ matrix.profile }}
