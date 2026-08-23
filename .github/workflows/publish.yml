@@ -1,23 +1,108 @@
 name: Publish npm
 
+# On every merge to main: bump minor (X.Y.Z → X.(Y+1).0), publish, push tag.
+# Major: edit package.json to N.0.0 and include [major] in the merge commit message
+# (or open a PR titled/committed with [major]) — then this workflow publishes without a minor bump.
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
   workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump (minor default; major only via workflow_dispatch or [major] commit)"
+        type: choice
+        options: [minor, major, none]
+        default: minor
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Avoid infinite loop from the release commit we push back
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+       !contains(github.event.head_commit.message, 'chore: release vibed-infra'))
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need full history + token that can push the version bump
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           registry-url: https://registry.npmjs.org
-      - run: npm test
-      - run: npm publish --access public
+
+      - name: Validate
+        run: npm test
+
+      - name: Decide bump
+        id: bump
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "kind=${{ inputs.bump }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          msg="${{ github.event.head_commit.message }}"
+          if [[ "$msg" == *"[major]"* ]]; then
+            echo "kind=none" >> "$GITHUB_OUTPUT"
+            echo "Manual major (or pinned) version — publishing package.json as-is"
+          else
+            echo "kind=minor" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump version
+        id: version
+        run: |
+          set -euo pipefail
+          kind="${{ steps.bump.outputs.kind }}"
+          before="$(node -p "require('./package.json').version")"
+          if [[ "$kind" == "minor" ]]; then
+            npm version minor --no-git-tag-version
+          elif [[ "$kind" == "major" ]]; then
+            npm version major --no-git-tag-version
+          fi
+          after="$(node -p "require('./package.json').version")"
+          echo "version=$after" >> "$GITHUB_OUTPUT"
+          echo "before=$before after=$after (bump=$kind)"
+
+      - name: Commit version + tag
+        if: steps.bump.outputs.kind == 'minor' || steps.bump.outputs.kind == 'major'
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: release vibed-infra v${VERSION}"
+          git tag -a "v${VERSION}" -m "vibed-infra v${VERSION}"
+          git push origin HEAD:main
+          git push origin "v${VERSION}"
+
+      - name: Tag pinned version ([major] commit, no auto-bump)
+        if: steps.bump.outputs.kind == 'none'
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
+            echo "Tag v${VERSION} already exists"
+          else
+            git tag -a "v${VERSION}" -m "vibed-infra v${VERSION}"
+            git push origin "v${VERSION}"
+          fi
+
+      - name: Publish to npm
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
