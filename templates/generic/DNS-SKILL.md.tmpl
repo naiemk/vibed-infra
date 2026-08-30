@@ -2,24 +2,19 @@
 name: Configure DNS for {{PRODUCT_NAME}}
 description: >-
   Paste this entire skill into an AU agent browser extension. Configure DNS A
-  records for the domains below to point at the operator VPS. Ask the user for
-  the VPS IPv4 address first — never invent an IP.
+  records for the domains below to point at the VPS IP listed in the table.
+  {{IP_INSTRUCTION}}
 ---
 
 # DNS setup for {{PRODUCT_NAME}}
 
 ## Before you change anything
 
-1. **Ask the user for the VPS public IPv4 address.** Do not guess or invent IPs.
-2. Optionally ask for IPv6 if they want AAAA records.
-3. Confirm which DNS provider UI they use (Cloudflare, registrar, Route53, etc.).
-4. Ensure you are logged into that provider in the browser before editing records.
-
-Placeholder used below: `{{VPS_IP}}` — replace with the IPv4 the user gives you.
+{{BEFORE_STEPS}}
 
 ## Records to create or update
 
-For each hostname, create an **A** record pointing to `{{VPS_IP}}` (TTL auto or 300).
+For each hostname, create an **A** record with the value in the table (TTL auto or 300).
 
 {{DNS_RECORDS}}
 
@@ -30,11 +25,11 @@ If the user also provides an IPv6 address, add matching **AAAA** records for the
 ## After saving DNS
 
 1. Wait for propagation (often 1–5 minutes on Cloudflare; longer elsewhere).
-2. Verify with dig/nslookup that each name resolves to the given VPS IP.
-3. Tell the user they can run certbot / `./start-gateway.sh` on the VPS after DNS is green (TLS needs the names to resolve).
+2. Verify with dig/nslookup that each name resolves to the IPv4 in the table.
+3. Tell the user to run on the VPS: `cd ~/services/gateway && ./setup-tls.sh` (or re-run `install-gateway.sh`), then `./start-gateway.sh` if the gateway is not up yet.
 
 ## Safety
 
-- Never invent IPs, domains, or credentials.
+- Never invent IPs, domains, or credentials.{{IP_SAFETY}}
 - Do not delete unrelated DNS records.
 - If a record already exists with a different target, confirm with the user before overwriting.

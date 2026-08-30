@@ -12,7 +12,7 @@ dist/        # generated — includes DNS-SKILL.md
 
 ```bash
 ./package.sh && git add dist && git commit && git push
-# Paste dist/DNS-SKILL.md into AU agent; give it the VPS IP
+# Paste dist/DNS-SKILL.md into AU agent (publicIp baked when set in config)
 ```
 
 ## Operator
@@ -22,12 +22,12 @@ wget -qO- .../dist/install-api.sh | bash
 wget -qO- .../dist/install-ui.sh | bash
 wget -qO- .../dist/install-nodes.sh | bash
 wget -qO- .../dist/install-gateway.sh | bash
-# Host gateway: ~/services/gateway  +  apps/hello-vps/sites.conf
+# Host gateway: ~/services/gateway + apps/hello-vps/sites.conf + setup-tls.sh
 ```
 
 | Profile | Notes |
 |---------|--------|
-| `gateway` | Bootstraps shared host once; later apps only add `apps/{name}/` |
+| `gateway` | Bootstraps shared host once; runs `setup-tls.sh`; later apps add `apps/{name}/` and refresh SANs |
 | `api` | Mounts `PERSIST_LOG_DIR` when set |
 
 ## Tests

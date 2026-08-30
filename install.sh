@@ -333,67 +333,90 @@ if [[ "$ROLE" == "gateway" ]]; then
   source "$DEST/lib-env.sh"
   load_dotenv "$DEST/.env"
   HG="$(vibed_gateway_home)"
-  # Prefer host certs
+  mkdir -p "$HG/certs" "$HG/certbot-www"
+
+  # Propagate public IP / TLS email from packageconfig into host + product .env
+  GW_PUBLIC_IP="$(
+    python3 -c "
+import sys
+sys.path.insert(0, '${INFRA_LIB}')
+from load_config import load_packageconfig, get_profile
+from pathlib import Path
+c = load_packageconfig(Path('${PC_LOCAL}'))
+p = get_profile(c, '${PROFILE}')
+print(p.get('publicIp') or '')
+"
+  )"
+  GW_TLS_EMAIL="$(
+    python3 -c "
+import sys
+sys.path.insert(0, '${INFRA_LIB}')
+from load_config import load_packageconfig, get_profile
+from pathlib import Path
+c = load_packageconfig(Path('${PC_LOCAL}'))
+p = get_profile(c, '${PROFILE}')
+print(p.get('tlsEmail') or '')
+"
+  )"
+  _patch_env() {
+    local file="$1" key="$2" val="$3"
+    [[ -n "$val" ]] || return 0
+    [[ -f "$file" ]] || return 0
+    if grep -q "^${key}=" "$file" 2>/dev/null; then
+      sed -i "s|^${key}=.*|${key}=${val}|" "$file"
+    else
+      echo "${key}=${val}" >>"$file"
+    fi
+  }
   if [[ -f "$HG/.env" ]]; then
-    load_dotenv "$HG/.env"
-  fi
-  CERT_DIR="$(python3 -c "
-import sys
-sys.path.insert(0, '${INFRA_LIB}')
-from load_config import load_packageconfig, get_profile
-from pathlib import Path
-p = get_profile(load_packageconfig(Path('${PC_LOCAL}')), '${PROFILE}')
-sites = p.get('sites') or []
-if not sites:
-    print('${HG}/certs')
-else:
-    s = sites[0]
-    print(s.get('tlsCertDir') or ('${HG}/certs'))
-")"
-  TLS_FULLCHAIN="${TLS_FULLCHAIN:-${CERT_DIR}/fullchain.pem}"
-  TLS_PRIVKEY="${TLS_PRIVKEY:-${CERT_DIR}/privkey.pem}"
-  # Prefer writable host certs when packaged tlsCertDir is not writable (e.g. /etc/letsencrypt)
-  if [[ ! -f "$TLS_FULLCHAIN" ]]; then
-    HOST_CERT_DIR="${HG}/certs"
-    mkdir -p "$HOST_CERT_DIR" 2>/dev/null || true
-    if [[ -x "${PRODUCT_RAW}/gen-dev-certs.sh" ]]; then
-      APP_HOST="$(python3 -c "
-import sys
-sys.path.insert(0, '${INFRA_LIB}')
-from load_config import load_packageconfig, get_profile
-from pathlib import Path
-p = get_profile(load_packageconfig(Path('${PC_LOCAL}')), '${PROFILE}')
-sites = p.get('sites') or []
-print(sites[0]['host'] if sites else 'localhost')
-")"
-      if APP_HOST="$APP_HOST" bash "${PRODUCT_RAW}/gen-dev-certs.sh" "$HOST_CERT_DIR" 2>/dev/null; then
-        TLS_FULLCHAIN="${HOST_CERT_DIR}/fullchain.pem"
-        TLS_PRIVKEY="${HOST_CERT_DIR}/privkey.pem"
-      fi
+    _patch_env "$HG/.env" GATEWAY_PUBLIC_IP "${GATEWAY_PUBLIC_IP:-$GW_PUBLIC_IP}"
+    _patch_env "$HG/.env" TLS_EMAIL "${TLS_EMAIL:-$GW_TLS_EMAIL}"
+    # Product/install env can force lab (CI) without wiping host LE later
+    if [[ -n "${TLS_MODE:-}" ]]; then
+      _patch_env "$HG/.env" TLS_MODE "$TLS_MODE"
     fi
   fi
-  if [[ -f "$HG/.env" ]]; then
-    sed -i "s|^TLS_FULLCHAIN=.*|TLS_FULLCHAIN=${TLS_FULLCHAIN}|" "$HG/.env" 2>/dev/null || true
-    sed -i "s|^TLS_PRIVKEY=.*|TLS_PRIVKEY=${TLS_PRIVKEY}|" "$HG/.env" 2>/dev/null || true
-  fi
-  mapfile -t DOMAIN_ARR < <(python3 -c "
+  _patch_env "$DEST/.env" GATEWAY_PUBLIC_IP "${GATEWAY_PUBLIC_IP:-$GW_PUBLIC_IP}"
+  _patch_env "$DEST/.env" TLS_EMAIL "${TLS_EMAIL:-$GW_TLS_EMAIL}"
+
+  # Collect domains for TLS_DOMAINS fallback if apps conf not parseable yet
+  TLS_DOMAINS="$(
+    python3 -c "
 import sys
 sys.path.insert(0, '${INFRA_LIB}')
 from load_config import load_packageconfig, get_profile
 from pathlib import Path
 p = get_profile(load_packageconfig(Path('${PC_LOCAL}')), '${PROFILE}')
+names=[]
 for s in p.get('sites') or []:
-    print(s['host'])
-    for a in s.get('aliases') or []:
-        print(a)
-")
-  infra_tls_offer_interactive "$TLS_FULLCHAIN" "$TLS_PRIVKEY" "${DOMAIN_ARR[@]}" || true
+    names.append(s['host'])
+    names.extend(s.get('aliases') or [])
+print(' '.join(names))
+"
+  )"
+  export TLS_DOMAINS
+  export GATEWAY_PUBLIC_IP="${GATEWAY_PUBLIC_IP:-$GW_PUBLIC_IP}"
+  export TLS_EMAIL="${TLS_EMAIL:-$GW_TLS_EMAIL}"
+
+  if [[ -x "$HG/setup-tls.sh" ]]; then
+    echo "Running host gateway TLS setup ..."
+    (cd "$HG" && GATEWAY_HOME="$HG" TLS_DOMAINS="$TLS_DOMAINS" \
+      GATEWAY_PUBLIC_IP="${GATEWAY_PUBLIC_IP:-}" \
+      TLS_EMAIL="${TLS_EMAIL:-}" \
+      TLS_MODE="${TLS_MODE:-}" \
+      ./setup-tls.sh) || {
+      echo "TLS setup did not complete — fix DNS then: cd $HG && ./setup-tls.sh --force" >&2
+    }
+  else
+    echo "warning: $HG/setup-tls.sh missing — re-run gateway install to bootstrap" >&2
+  fi
 fi
 
 echo ""
 if [[ "$ROLE" == "gateway" ]]; then
   echo "Install complete. Host gateway: $(vibed_gateway_home)"
   echo "App sites: $(vibed_gateway_home)/apps/${PRODUCT_NAME:-app}/sites.conf"
+  echo "TLS: cd $(vibed_gateway_home) && ./setup-tls.sh   # re-run if host/IP/domains change (--force)"
   echo "Start: cd $DEST && ./start-gateway.sh"
 else
   echo "Install complete. Start: cd $DEST && ./${START_SCRIPT}"

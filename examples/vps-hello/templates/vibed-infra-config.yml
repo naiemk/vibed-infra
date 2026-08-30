@@ -28,6 +28,9 @@ autoUpdate:
     offset: 20
 
 gateway:
+  # Documentation / TEST-NET sample IP — replace with your VPS IPv4 before packaging for production
+  publicIp: 203.0.113.10
+  tlsEmail: ops@example.com
   nginxImage: nginx:alpine
   sites:
     - host: hello.example.com

@@ -8,30 +8,33 @@ Published on npm as **`vibed-infra`**.
 
 | File | Purpose |
 |------|---------|
-| `vibed-infra-config.yml` | Name, templates, `network.edge` (default `vps-edge`), `gateway.sites[]`, auto-update |
+| `vibed-infra-config.yml` | Name, templates, `network.edge`, `gateway.publicIp` / `tlsEmail` / `sites[]`, auto-update |
 | `api-config.yaml` / `ui-config.yaml` / `nodes-config.yaml` | Images + opaque config |
 
 ```bash
 ./package.sh
 git add dist && git commit && git push
-# Copy dist/DNS-SKILL.md into AU agent browser extension; give it the VPS IP
+# Copy dist/DNS-SKILL.md into AU agent (domains + publicIp already filled when configured)
 ```
 
 ## Operator flow (VPS)
 
 ```bash
+# 1) DNS — paste dist/DNS-SKILL.md into AU browser agent
+# 2) App roles
 wget -qO- .../dist/install-api.sh | bash
 wget -qO- .../dist/install-ui.sh | bash
 wget -qO- .../dist/install-nodes.sh | bash
-wget -qO- .../dist/install-gateway.sh | bash   # bootstraps ~/services/gateway once + apps/{name}/
+# 3) Host gateway + TLS (setup-tls.sh; re-run with --force if host/IP changes)
+wget -qO- .../dist/install-gateway.sh | bash
 ```
 
 | Profile | Role |
 |---------|------|
 | `api` / `ui` / `nodes` | Join shared `vps-edge` |
-| `gateway` | Host nginx + this app’s `sites.conf` under `apps/` |
+| `gateway` | Host nginx + `apps/{name}/sites.conf` + HTTPS via `~/services/gateway/setup-tls.sh` |
 
-Multi-app: further products’ `install-gateway.sh` only add `apps/{other}/sites.conf` and reload — no second 80/443 bind.
+Multi-app: further products’ `install-gateway.sh` only add `apps/{other}/sites.conf`, refresh TLS SANs, and reload — no second 80/443 bind.
 
 ## Machine services (installed once)
 
@@ -60,6 +63,8 @@ Auto-update cron **enqueues** work; the agent processes one job at a time. Updat
 |----------|---------|
 | `GATEWAY_HOME` | Host gateway dir (default `~/services/gateway`) |
 | `VIBED_HOME` | Machine vibed root (default `~/services/vibed-infra`) |
+| `GATEWAY_PUBLIC_IP` | VPS IPv4 (from `gateway.publicIp`) |
+| `TLS_EMAIL` / `TLS_MODE` | Let’s Encrypt email; `lab` or `letsencrypt` |
 | `PERSIST_LOG_DIR` | Per-service event log dir |
 | `DOCKER_AUTO_PRUNE` | Prune dangling images after update (default on) |
 

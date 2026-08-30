@@ -77,3 +77,5 @@ profiles:
         aliases:
         - www.hello.example.com
         createPath: /api/notes
+    publicIp: 203.0.113.10
+    tlsEmail: "ops@example.com"

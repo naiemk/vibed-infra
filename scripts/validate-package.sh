@@ -28,6 +28,8 @@ c = compile_packageconfig(p, raw_base='/dist')
 assert c['profiles']['api']['role'] == 'backend'
 assert c['profiles']['ui']['role'] == 'ui'
 assert c['profiles']['gateway']['sites'][0]['host'] == 'hello.example.com'
+assert c['profiles']['gateway'].get('publicIp') == '203.0.113.10'
+assert c['profiles']['gateway'].get('tlsEmail') == 'ops@example.com'
 print('product_config ok')
 "
 
@@ -36,6 +38,7 @@ test -f examples/vps-hello/dist/install-api.sh
 test -f examples/vps-hello/dist/packageconfig.yaml
 test -f examples/vps-hello/dist/DNS-SKILL.md
 grep -q "hello.example.com" examples/vps-hello/dist/DNS-SKILL.md
+grep -q "203.0.113.10" examples/vps-hello/dist/DNS-SKILL.md
 test -x examples/vps-hello/dist/start-api.sh
 
 # Persistlog round-trip
@@ -69,17 +72,26 @@ for prof in api ui nodes gateway; do
   DEST="${TMPDIR:-/tmp}/hello-dist-dry-${prof}-$$"
   mkdir -p "$DEST"
   PACKAGER_RAW="$ROOT" INSTALL_DIR="$DEST" GATEWAY_HOME="$GATEWAY_HOME" VIBED_HOME="$VIBED_HOME" \
+    TLS_MODE=lab \
     bash "examples/vps-hello/dist/install-${prof}.sh"
   test -f "$DEST/.env"
   test -x "$DEST/start-${prof}.sh" || test -x "$DEST/start-api.sh"
   if [[ "$prof" == gateway ]]; then
     test -f "$GATEWAY_HOME/.vibed-host-gateway"
     test -f "$GATEWAY_HOME/apps/hello-vps/sites.conf"
+    test -x "$GATEWAY_HOME/setup-tls.sh"
+    bash -n "$GATEWAY_HOME/setup-tls.sh"
+    test -f "$GATEWAY_HOME/certs/fullchain.pem"
+    test -f "$GATEWAY_HOME/.vibed-tls-state"
     grep -q "hello.example.com" "$GATEWAY_HOME/apps/hello-vps/sites.conf"
   fi
   rm -rf "$DEST"
 done
 rm -rf "$GATEWAY_HOME" "$VIBED_HOME"
+
+# DNS-SKILL bakes gateway.publicIp when set
+grep -q "203.0.113.10" examples/vps-hello/dist/DNS-SKILL.md
+grep -q "hello.example.com" examples/vps-hello/dist/DNS-SKILL.md
 
 python3 lib/generate.py examples/vps-hello/dist/packageconfig.yaml --profile gateway --mode app \
   -o /tmp/hello-vps-sites.conf
@@ -106,6 +118,7 @@ for f in \
   examples/vps-hello/dist/install-nodes.sh \
   examples/vps-hello/dist/install-gateway.sh \
   templates/host-gateway/start-gateway.sh \
+  templates/host-gateway/setup-tls.sh \
   templates/update-agent/agent.sh
 do
   bash -n "$f"

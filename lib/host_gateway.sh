@@ -38,13 +38,6 @@ vibed_bootstrap_host_gateway() {
   home="$(vibed_gateway_home)"
   mkdir -p "$home/gateway/conf.d" "$home/apps" "$home/certs" "$home/certbot-www"
 
-  if [[ -f "${home}/.vibed-host-gateway" ]]; then
-    echo "host gateway already present: $home"
-    return 0
-  fi
-
-  echo "bootstrapping host gateway at $home"
-
   _hg_fetch() {
     local rel="$1" dest="$2"
     mkdir -p "$(dirname "$dest")"
@@ -58,6 +51,17 @@ vibed_bootstrap_host_gateway() {
       fi
     fi
   }
+
+  # Always refresh setup-tls (idempotent re-install / multi-app)
+  _hg_fetch "templates/host-gateway/setup-tls.sh" "$home/setup-tls.sh"
+  chmod +x "$home/setup-tls.sh"
+
+  if [[ -f "${home}/.vibed-host-gateway" ]]; then
+    echo "host gateway already present: $home"
+    return 0
+  fi
+
+  echo "bootstrapping host gateway at $home"
 
   _hg_fetch "templates/host-gateway/gateway/nginx.conf" "$home/gateway/nginx.conf"
   _hg_fetch "templates/host-gateway/gateway/conf.d/00-default.conf" "$home/gateway/conf.d/00-default.conf"

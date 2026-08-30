@@ -26,8 +26,9 @@ Tags: `:main`, `main-<sha>`, semver on tag push.
 
 ## CI in vibed-infra
 
-1. **`npm test`** — runs `package.sh` for `examples/vps-hello`, dry-runs each `dist/install-*.sh` (no Docker).
+1. **`npm test`** — runs `package.sh` for `examples/vps-hello`, dry-runs each `dist/install-*.sh` with `TLS_MODE=lab` (no Docker / no certbot).
 2. **`dist-e2e` matrix** — `api`, `ui`, `nodes` via `examples/vps-hello/test-dist.sh` (builds images + proves each profile).
+3. **`multi-app-e2e`** — `scripts/e2e-multi-app.sh` / `npm run test:e2e-multi` (two apps, localhost wget, shared host gateway + lab TLS).
 
 ## Product repo CI
 
@@ -37,8 +38,8 @@ Tags: `:main`, `main-<sha>`, semver on tag push.
 
 ## Checklist
 
-- [ ] Four YAML templates under `templates/`
-- [ ] Committed `dist/` matches `./package.sh` output
+- [ ] Four YAML templates under `templates/` (`gateway.publicIp` / `tlsEmail` / `sites[]` set for production)
+- [ ] Committed `dist/` matches `./package.sh` output (including `DNS-SKILL.md`)
 - [ ] Image names in configs match GHCR
 - [ ] `npm test` / install dry-run passes
-- [ ] Secrets not in templates — only `.env.*.example` placeholders
+- [ ] Secrets not in templates — only `.env.*.example` placeholders (publicIp/domain are OK to commit)

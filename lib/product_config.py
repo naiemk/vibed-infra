@@ -89,6 +89,27 @@ def compile_packageconfig(
         sites.append(entry)
 
     nginx_image = (infra.get("images") or {}).get("nginx") or gw.get("nginxImage") or "nginx:alpine"
+    public_ip = gw.get("publicIp") or gw.get("public_ip") or ""
+    tls_email = gw.get("tlsEmail") or gw.get("tls_email") or ""
+
+    gateway_profile: dict[str, Any] = {
+        "role": "gateway",
+        "mode": "host-extension",
+        "templates": {"envExample": ".env.gateway.example"},
+        "startScript": "start-gateway.sh",
+        "updateScript": "update-gateway.sh",
+        "autoUpdate": {
+            "flags": [gw_au.get("flag") or "GATEWAY_AUTO_UPDATE"],
+            "intervalEnv": gw_au.get("intervalEnv"),
+            "offset": gw_au.get("offset", 20),
+            "stopTimeoutEnv": gw_au.get("stopTimeoutEnv"),
+        },
+        "sites": sites,
+    }
+    if public_ip:
+        gateway_profile["publicIp"] = str(public_ip)
+    if tls_email:
+        gateway_profile["tlsEmail"] = str(tls_email)
 
     return {
         "name": name,
@@ -141,20 +162,7 @@ def compile_packageconfig(
                     ]
                 },
             },
-            "gateway": {
-                "role": "gateway",
-                "mode": "host-extension",
-                "templates": {"envExample": ".env.gateway.example"},
-                "startScript": "start-gateway.sh",
-                "updateScript": "update-gateway.sh",
-                "autoUpdate": {
-                    "flags": [gw_au.get("flag") or "GATEWAY_AUTO_UPDATE"],
-                    "intervalEnv": gw_au.get("intervalEnv"),
-                    "offset": gw_au.get("offset", 20),
-                    "stopTimeoutEnv": gw_au.get("stopTimeoutEnv"),
-                },
-                "sites": sites,
-            },
+            "gateway": gateway_profile,
         },
         "_meta": {
             "apiContainer": api_name,
@@ -165,6 +173,8 @@ def compile_packageconfig(
             "network": network,
             "apiPort": api.get("port") or 8080,
             "uiPort": ui.get("port") or 80,
+            "publicIp": str(public_ip) if public_ip else "",
+            "tlsEmail": str(tls_email) if tls_email else "",
         },
     }
 

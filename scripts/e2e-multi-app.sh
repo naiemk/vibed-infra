@@ -179,6 +179,7 @@ wget_install() {
     GATEWAY_HOME="$GATEWAY_HOME" \
     VIBED_HOME="$VIBED_HOME" \
     HOME="$HOME" \
+    TLS_MODE=lab \
     bash <(wget -qO- "${BASE_URL}/products/${name}/dist/install-${profile}.sh")
 }
 
@@ -236,7 +237,14 @@ patch_env "$GATEWAY_HOME/.env" \
   GATEWAY_NAME "$GW_NAME" \
   HTTP_PORT "18088" \
   HTTPS_PORT "18443" \
+  TLS_MODE "lab" \
   PULL "0"
+
+# Lab certs already issued by setup-tls during gateway install (both app SANs after beta)
+test -f "$GATEWAY_HOME/certs/fullchain.pem"
+test -f "$GATEWAY_HOME/.vibed-tls-state"
+grep -q 'alpha.example.com' "$GATEWAY_HOME/.vibed-tls-state"
+grep -q 'beta.example.com' "$GATEWAY_HOME/.vibed-tls-state"
 
 api_port_alpha=19081
 api_port_beta=19082
@@ -254,19 +262,6 @@ for name in alpha beta; do
     UI_NAME "hello-${name}-ui" \
     PULL "0"
 done
-
-# Multi-SAN lab cert covering both hosts
-CERT_DIR="$GATEWAY_HOME/certs"
-mkdir -p "$CERT_DIR"
-openssl req -x509 -nodes -newkey rsa:2048 -days 2 \
-  -keyout "$CERT_DIR/privkey.pem" \
-  -out "$CERT_DIR/fullchain.pem" \
-  -subj "/CN=alpha.example.com" \
-  -addext "subjectAltName=DNS:alpha.example.com,DNS:beta.example.com,DNS:localhost" \
-  >/dev/null 2>&1
-patch_env "$GATEWAY_HOME/.env" \
-  TLS_FULLCHAIN "$CERT_DIR/fullchain.pem" \
-  TLS_PRIVKEY "$CERT_DIR/privkey.pem"
 
 # Host gateway inclusive layout
 test -f "$GATEWAY_HOME/.vibed-host-gateway"
