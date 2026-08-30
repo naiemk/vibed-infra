@@ -9,22 +9,16 @@ infra_tls_check() {
 
 infra_tls_suggest_certbot() {
   local domains=("$@")
-  local joined=""
-  local d
-  for d in "${domains[@]}"; do
-    joined+=" -d $d"
-  done
   cat <<EOF
 
-TLS certificates not found. Issue with certbot (port 80 must be free):
+TLS certificates not found. From the host gateway directory, issue with:
 
-  sudo certbot certonly --standalone${joined}
+  cd ~/services/gateway && ./setup-tls.sh --force
 
-Or after gateway HTTP is up (webroot):
+(setup-tls.sh uses docker certbot when available — no host certbot/sudo required —
+or host certbot when installed. PEMs land in ./certs/.)
 
-  sudo certbot certonly --webroot -w /var/www/certbot${joined}
-
-Then set TLS_FULLCHAIN and TLS_PRIVKEY in .env and run ./start.sh
+Or set TLS_MODE=lab for self-signed lab certs, then ./start.sh
 
 EOF
 }
@@ -41,19 +35,16 @@ infra_tls_offer_interactive() {
   if [[ ! -t 0 ]]; then
     return 0
   fi
-  read -r -p "Run certbot --standalone now? [y/N] " ans
+  local gw="${GATEWAY_HOME:-${HOME:-}/services/gateway}"
+  read -r -p "Run setup-tls.sh in ${gw}? [y/N] " ans
   case "$ans" in
     y|Y|yes|YES)
-      if ! command -v certbot >/dev/null 2>&1; then
-        echo "certbot not found — install certbot first" >&2
+      if [[ -x "${gw}/setup-tls.sh" ]]; then
+        (cd "$gw" && ./setup-tls.sh --force)
+      else
+        echo "setup-tls.sh not found at ${gw} — bootstrap the host gateway first" >&2
         return 1
       fi
-      local args=()
-      local d
-      for d in "${domains[@]}"; do
-        args+=(-d "$d")
-      done
-      sudo certbot certonly --standalone "${args[@]}"
       ;;
   esac
 }

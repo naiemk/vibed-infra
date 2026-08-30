@@ -72,7 +72,7 @@ See [`skills/infra-update-agent/SKILL.md`](skills/infra-update-agent/SKILL.md). 
 | `VIBED_HOME` | Machine vibed root (default `~/services/vibed-infra`) |
 | `VIBED_UPDATE_AGENT` | Override update-agent dir (default `$VIBED_HOME/update-agent`) |
 | `GATEWAY_PUBLIC_IP` | VPS IPv4 (from `gateway.publicIp`) |
-| `TLS_EMAIL` / `TLS_MODE` | Let’s Encrypt email; `lab` or `letsencrypt` |
+| `TLS_EMAIL` / `TLS_MODE` | Let’s Encrypt email; `lab` or `letsencrypt` (docker certbot → `./certs` PEMs; optional `CERTBOT_IMAGE` / `LETSENCRYPT_HOME`) |
 | `PERSIST_LOG_DIR` | Per-service event log dir |
 | `DOCKER_AUTO_PRUNE` | Prune dangling images after update (default on) |
 

@@ -27,7 +27,7 @@ gateway:
       aliases: [www.app.example.com]
       healthPath: /api/health
       createPath: /api/items
-      tlsCertDir: /etc/letsencrypt/live/app.example.com
+      tlsCertDir: ./certs  # host gateway PEMs; legacy /etc/letsencrypt/... paths ignored in .env.gateway.example
 ```
 
 Defaults: containers `{name}-api` / `{name}-ui` / `{name}-worker`; host gateway container `vps-gateway`.

@@ -100,8 +100,13 @@ DOCKER_PRUNE_UNTIL=72h
 def _env_gateway(meta: dict, conf: dict, sites: list) -> str:
     au = conf["profiles"]["gateway"]["autoUpdate"]
     gw = conf["profiles"]["gateway"]
-    host = sites[0]["host"] if sites else "example.com"
-    cert_dir = sites[0].get("tlsCertDir", f"/etc/letsencrypt/live/{host}") if sites else "/etc/letsencrypt/live/example.com"
+    # Host gateway stores PEMs under ./certs (setup-tls.sh). tlsCertDir is legacy/docs only
+    # unless it already points at a relative ./certs tree.
+    cert_dir = "./certs"
+    if sites:
+        raw = sites[0].get("tlsCertDir") or ""
+        if raw.startswith("./certs") or raw.rstrip("/") == "certs":
+            cert_dir = raw.rstrip("/")
     flags = au.get("flags") or ["GATEWAY_AUTO_UPDATE"]
     flag_lines = "\n".join(f"{f}=0" for f in flags)
     public_ip = gw.get("publicIp") or meta.get("publicIp") or ""

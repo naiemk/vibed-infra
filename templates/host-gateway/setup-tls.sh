@@ -12,6 +12,8 @@ for arg in "$@"; do
     -h|--help)
       echo "usage: $0 [--force]"
       echo "  Issues Let's Encrypt (TLS_EMAIL / TLS_MODE=letsencrypt) or lab self-signed certs."
+      echo "  LE prefers host certbot when available (root or passwordless sudo);"
+      echo "  otherwise uses docker run certbot/certbot (no sudo). PEMs land in ./certs/."
       echo "  Re-runs when certs missing, domains/IP changed vs .vibed-tls-state, or --force."
       exit 0
       ;;
@@ -137,27 +139,104 @@ issue_letsencrypt() {
     echo "TLS_EMAIL (or gateway.tlsEmail) required for Let's Encrypt" >&2
     return 1
   fi
-  if ! command -v certbot >/dev/null 2>&1; then
-    echo "certbot not found — install certbot, or set TLS_MODE=lab for self-signed" >&2
-    return 1
+
+  local LE_HOME="${LETSENCRYPT_HOME:-${SCRIPT_DIR}/letsencrypt}"
+  local CERTBOT_IMAGE="${CERTBOT_IMAGE:-certbot/certbot}"
+  mkdir -p "$LE_HOME" "$LE_HOME/work" "$LE_HOME/logs" "$CERT_DIR" "$CERTBOT_WWW"
+
+  # Absolute webroot for docker bind mounts
+  local CERTBOT_WWW_ABS="$CERTBOT_WWW"
+  [[ "$CERTBOT_WWW_ABS" != /* ]] && CERTBOT_WWW_ABS="${SCRIPT_DIR}/${CERTBOT_WWW_ABS#./}"
+  mkdir -p "$CERTBOT_WWW_ABS"
+
+  local use_webroot=0
+  if gateway_running; then
+    use_webroot=1
   fi
-  local args=(certonly --non-interactive --agree-tos --email "$email" --cert-name "$primary")
+
+  local domain_args=()
   local d
   for d in "${all[@]}"; do
-    args+=(-d "$d")
+    domain_args+=(-d "$d")
   done
-  if gateway_running; then
-    echo "Gateway running — certbot webroot ($CERTBOT_WWW)"
-    args+=(--webroot -w "$CERTBOT_WWW")
-  else
-    echo "Gateway not running — certbot standalone (port 80 must be free)"
-    args+=(--standalone)
-  fi
+
+  local base_args=(
+    certonly
+    --agree-tos
+    --non-interactive
+    --email "$email"
+    --cert-name "$primary"
+    "${domain_args[@]}"
+  )
   if [[ "${CERTBOT_DRY_RUN:-0}" == "1" ]]; then
-    args+=(--dry-run)
+    base_args+=(--dry-run)
   fi
-  if ! sudo certbot "${args[@]}"; then
-    cat <<EOF >&2
+
+  local ran=0
+  local host_can_run=0
+  if command -v certbot >/dev/null 2>&1; then
+    if [[ "$(id -u)" -eq 0 ]]; then
+      host_can_run=1
+    elif sudo -n true >/dev/null 2>&1; then
+      host_can_run=1
+    fi
+  fi
+
+  if [[ "$host_can_run" == "1" ]]; then
+    local host_args=(
+      "${base_args[@]}"
+      --config-dir "$LE_HOME"
+      --work-dir "$LE_HOME/work"
+      --logs-dir "$LE_HOME/logs"
+    )
+    if [[ "$use_webroot" == "1" ]]; then
+      echo "Gateway running — host certbot webroot ($CERTBOT_WWW_ABS)"
+      host_args+=(--webroot -w "$CERTBOT_WWW_ABS")
+    else
+      echo "Gateway not running — host certbot standalone (port 80 must be free)"
+      host_args+=(--standalone)
+    fi
+    local run_certbot=(certbot)
+    if [[ "$(id -u)" -ne 0 ]]; then
+      run_certbot=(sudo certbot)
+    fi
+    if "${run_certbot[@]}" "${host_args[@]}"; then
+      ran=1
+      # Best-effort: reclaim root-owned LE tree after sudo certbot
+      if [[ "$(id -u)" -ne 0 ]]; then
+        sudo -n chown -R "$(id -u):$(id -g)" "$LE_HOME" 2>/dev/null || true
+      fi
+    fi
+  fi
+
+  if [[ "$ran" != "1" && "$host_can_run" != "1" ]] && command -v docker >/dev/null 2>&1; then
+    local docker_args=(
+      run --rm
+      -v "${LE_HOME}:/etc/letsencrypt"
+    )
+    local container_args=("${base_args[@]}")
+    if [[ "$use_webroot" == "1" ]]; then
+      echo "Gateway running — docker certbot webroot ($CERTBOT_WWW_ABS)"
+      docker_args+=(-v "${CERTBOT_WWW_ABS}:/var/www/certbot")
+      container_args+=(--webroot -w /var/www/certbot)
+    else
+      echo "Gateway not running — docker certbot standalone (-p 80:80)"
+      docker_args+=(-p 80:80)
+      container_args+=(--standalone)
+    fi
+    if docker "${docker_args[@]}" "$CERTBOT_IMAGE" "${container_args[@]}"; then
+      ran=1
+    fi
+  fi
+
+  if [[ "$ran" != "1" ]]; then
+    if [[ "$host_can_run" != "1" ]] && ! command -v docker >/dev/null 2>&1; then
+      cat <<EOF >&2
+Neither usable host certbot nor docker found.
+Install Docker (preferred for non-root), or certbot with sudo, or set TLS_MODE=lab.
+EOF
+    else
+      cat <<EOF >&2
 
 Let's Encrypt failed (often DNS not pointing here yet).
 1. Paste dist/DNS-SKILL.md into your AU DNS agent (or create the A records yourself).
@@ -165,15 +244,27 @@ Let's Encrypt failed (often DNS not pointing here yet).
 3. Re-run: cd ${SCRIPT_DIR} && ./setup-tls.sh --force
 
 EOF
+    fi
     return 1
   fi
-  local live="/etc/letsencrypt/live/${primary}"
+
+  # Dry-run does not write live PEMs
+  if [[ "${CERTBOT_DRY_RUN:-0}" == "1" ]]; then
+    echo "certbot dry-run succeeded (no PEMs written)"
+    return 0
+  fi
+
+  local live="${LE_HOME}/live/${primary}"
   if [[ ! -f "${live}/fullchain.pem" || ! -f "${live}/privkey.pem" ]]; then
     echo "certbot succeeded but ${live} PEMs missing" >&2
     return 1
   fi
-  patch_env_key TLS_FULLCHAIN "${live}/fullchain.pem"
-  patch_env_key TLS_PRIVKEY "${live}/privkey.pem"
+  cp -L "${live}/fullchain.pem" "${CERT_DIR}/fullchain.pem"
+  cp -L "${live}/privkey.pem" "${CERT_DIR}/privkey.pem"
+  chmod 644 "${CERT_DIR}/fullchain.pem"
+  chmod 600 "${CERT_DIR}/privkey.pem"
+  patch_env_key TLS_FULLCHAIN "${CERT_DIR}/fullchain.pem"
+  patch_env_key TLS_PRIVKEY "${CERT_DIR}/privkey.pem"
   patch_env_key TLS_MODE letsencrypt
   patch_env_key TLS_EMAIL "$email"
 }
