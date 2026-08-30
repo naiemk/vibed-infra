@@ -52,9 +52,11 @@ vibed_bootstrap_host_gateway() {
     fi
   }
 
-  # Always refresh setup-tls (idempotent re-install / multi-app)
+  # Always refresh gateway scripts (idempotent re-install / multi-app)
   _hg_fetch "templates/host-gateway/setup-tls.sh" "$home/setup-tls.sh"
-  chmod +x "$home/setup-tls.sh"
+  _hg_fetch "templates/host-gateway/start-gateway.sh" "$home/start-gateway.sh"
+  _hg_fetch "templates/host-gateway/reload-gateway.sh" "$home/reload-gateway.sh"
+  chmod +x "$home/setup-tls.sh" "$home/start-gateway.sh" "$home/reload-gateway.sh"
 
   if [[ -f "${home}/.vibed-host-gateway" ]]; then
     echo "host gateway already present: $home"
@@ -66,11 +68,9 @@ vibed_bootstrap_host_gateway() {
   _hg_fetch "templates/host-gateway/gateway/nginx.conf" "$home/gateway/nginx.conf"
   _hg_fetch "templates/host-gateway/gateway/conf.d/00-default.conf" "$home/gateway/conf.d/00-default.conf"
   _hg_fetch "templates/host-gateway/.env.example" "$home/.env.example"
-  _hg_fetch "templates/host-gateway/start-gateway.sh" "$home/start-gateway.sh"
-  _hg_fetch "templates/host-gateway/reload-gateway.sh" "$home/reload-gateway.sh"
   _hg_fetch "templates/host-gateway/update-gateway.sh" "$home/update-gateway.sh"
   _hg_fetch "lib/env.sh" "$home/lib-env.sh"
-  chmod +x "$home/start-gateway.sh" "$home/reload-gateway.sh" "$home/update-gateway.sh"
+  chmod +x "$home/update-gateway.sh"
 
   if [[ ! -f "$home/.env" ]]; then
     cp "$home/.env.example" "$home/.env"

@@ -33,7 +33,7 @@ if [[ ! -f "$TLS_FULLCHAIN" || ! -f "$TLS_PRIVKEY" ]]; then
   echo "TLS certs not found:" >&2
   echo "  $TLS_FULLCHAIN" >&2
   echo "  $TLS_PRIVKEY" >&2
-  echo "Run gen-dev-certs.sh into ./certs for lab, or certbot for production." >&2
+  echo "Run ./setup-tls.sh (lab or letsencrypt) to create ./certs PEMs." >&2
   exit 1
 fi
 
@@ -44,6 +44,10 @@ fi
 
 docker network create "$NETWORK" >/dev/null 2>&1 || true
 mkdir -p "$CERTBOT_WWW" "$APPS_DIR"
+# Absolute path for live ACME webroot bind mount
+CERTBOT_ABS="$CERTBOT_WWW"
+[[ "$CERTBOT_ABS" != /* ]] && CERTBOT_ABS="${SCRIPT_DIR}/${CERTBOT_ABS#./}"
+mkdir -p "$CERTBOT_ABS"
 
 if docker inspect "$GATEWAY_NAME" >/dev/null 2>&1; then
   echo "Removing existing container $GATEWAY_NAME ..."
@@ -58,7 +62,7 @@ STAGE="$(mktemp -d)"
 cleanup_stage() { rm -rf "$STAGE"; }
 trap cleanup_stage EXIT
 
-mkdir -p "$STAGE/conf.d" "$STAGE/certs" "$STAGE/certbot" "$STAGE/apps"
+mkdir -p "$STAGE/conf.d" "$STAGE/certs" "$STAGE/apps"
 cp "$NGINX_CONF" "$STAGE/nginx.conf"
 cp -r "$CONF_D/." "$STAGE/conf.d/"
 cp "$TLS_FULLCHAIN" "$STAGE/certs/fullchain.pem"
@@ -75,10 +79,6 @@ if [[ -d "$APPS_DIR" ]]; then
     fi
   done
 fi
-if [[ -d "$CERTBOT_WWW" ]]; then
-  cp -r "$CERTBOT_WWW/." "$STAGE/certbot/" 2>/dev/null || true
-fi
-
 tar -C "$STAGE" -cf - . | docker run --rm -i -v "${CONF_VOL}:/cfg" alpine tar -xf - -C /cfg
 
 echo "Starting $GATEWAY_NAME (HTTP ${HTTP_PORT}, HTTPS ${HTTPS_PORT}) ..."
@@ -92,6 +92,7 @@ docker run -d \
   -p "${HTTP_PORT}:80" \
   -p "${HTTPS_PORT}:443" \
   -v "${CONF_VOL}:/gateway-cfg:ro" \
+  -v "${CERTBOT_ABS}:/var/www/certbot" \
   "$NGINX_IMAGE" \
   sh -c 'mkdir -p /etc/nginx/certs /etc/nginx/conf.d /etc/nginx/apps /var/www/certbot && \
     cp /gateway-cfg/nginx.conf /etc/nginx/nginx.conf && \
@@ -99,7 +100,6 @@ docker run -d \
     if [ -d /gateway-cfg/apps ]; then cp -r /gateway-cfg/apps/. /etc/nginx/apps/; fi && \
     cp /gateway-cfg/certs/fullchain.pem /etc/nginx/certs/fullchain.pem && \
     cp /gateway-cfg/certs/privkey.pem /etc/nginx/certs/privkey.pem && \
-    cp -r /gateway-cfg/certbot/. /var/www/certbot/ 2>/dev/null || true && \
     exec nginx -g "daemon off;"' >/dev/null
 
 trap - EXIT
