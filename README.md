@@ -44,7 +44,7 @@ Multi-app: further products’ `install-gateway.sh` only add `apps/{other}/sites
 | `~/services/vibed-infra/update-agent` | Serial pull queue + optional GHCR webhook |
 | `~/services/vibed-infra/persist-logs` | Per-app WALs + optional R2/S3 ship |
 
-Auto-update cron **enqueues** work; the agent processes one job at a time. Updates prune dangling images (`DOCKER_AUTO_PRUNE=1`).
+Auto-update cron **enqueues** work; the agent processes one job at a time. After a GHCR push, the reusable image workflow mints a GitHub Actions OIDC JWT and notifies `https://{domain}/_vibed/hooks/ghcr` (fallback `http://{publicIp}/…`) so the pull does not wait for cron. Updates prune dangling images (`DOCKER_AUTO_PRUNE=1`).
 
 ## Layout
 

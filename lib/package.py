@@ -313,6 +313,11 @@ def build_dist(
         if raw_base_val.startswith("http://") or raw_base_val.startswith("https://")
         else None
     )
+    notify_src = packager_root / "github" / "notify-vps-pull.py"
+    if notify_src.is_file():
+        shutil.copy2(notify_src, out_dir / "notify-vps-pull.py")
+        _chmod_x(out_dir / "notify-vps-pull.py")
+
     for profile in ("api", "ui", "nodes", "gateway"):
         name = f"install-{profile}.sh"
         _write(

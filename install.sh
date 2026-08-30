@@ -57,7 +57,7 @@ LOCAL_PACKAGER=0
 if [[ "$PACKAGER_RAW" =~ ^/ ]] && [[ -d "$PACKAGER_RAW/lib" ]]; then
   LOCAL_PACKAGER=1
 fi
-for lib in fetch.sh env.sh prompt.sh tls.sh load_config.py generate.py host_gateway.sh; do
+for lib in fetch.sh env.sh prompt.sh tls.sh load_config.py generate.py host_gateway.sh update_queue.sh webhook.py github_oidc.py; do
   if [[ "$LOCAL_PACKAGER" == "1" ]]; then
     cp -f "${PACKAGER_RAW}/lib/${lib}" "${INFRA_LIB}/${lib}"
   else
@@ -319,8 +319,83 @@ EOF
 chmod +x "$DEST/${START_SCRIPT}" 2>/dev/null || true
 
 # Ensure update-agent + persist-logs on first install (idempotent)
-if [[ -f "${PACKAGER_RAW}/templates/update-agent/install-agent.sh" ]]; then
-  PACKAGER_RAW="$PACKAGER_RAW" VIBED_HOME="${VIBED_HOME:-}" bash "${PACKAGER_RAW}/templates/update-agent/install-agent.sh" || true
+_install_update_agent() {
+  local agent_packager="$PACKAGER_RAW"
+  if [[ "$LOCAL_PACKAGER" != "1" ]]; then
+    agent_packager="${DEST}/.infra-packager"
+    mkdir -p "$agent_packager/lib" "$agent_packager/templates/update-agent"
+    cp -f "${INFRA_LIB}/update_queue.sh" "$agent_packager/lib/update_queue.sh" 2>/dev/null || true
+    cp -f "${INFRA_LIB}/webhook.py" "$agent_packager/lib/webhook.py" 2>/dev/null || true
+    cp -f "${INFRA_LIB}/github_oidc.py" "$agent_packager/lib/github_oidc.py" 2>/dev/null || true
+    for f in install-agent.sh agent.sh enqueue.sh webhook_server.py; do
+      _fetch "${PACKAGER_RAW}/templates/update-agent/${f}" "$agent_packager/templates/update-agent/${f}" || true
+    done
+  fi
+  if [[ -f "${agent_packager}/templates/update-agent/install-agent.sh" ]]; then
+    chmod +x "$agent_packager/templates/update-agent/"*.sh 2>/dev/null || true
+    PACKAGER_RAW="$agent_packager" VIBED_HOME="${VIBED_HOME:-}" bash "${agent_packager}/templates/update-agent/install-agent.sh" || true
+  fi
+}
+_install_update_agent
+
+# Register this install so GHCR notify can enqueue without waiting for cron
+PRODUCT_NAME="${PRODUCT_NAME:-$(
+  python3 -c "
+import sys
+sys.path.insert(0, '${INFRA_LIB}')
+from load_config import load_packageconfig
+from pathlib import Path
+print(load_packageconfig(Path('${PC_LOCAL}')).get('name') or 'app')
+"
+)}"
+_REG_ROLE="$ROLE"
+case "$ROLE" in
+  backend) _REG_ROLE=api ;;
+  workers) _REG_ROLE=nodes ;;
+esac
+# shellcheck source=/dev/null
+if [[ -f "${INFRA_LIB}/update_queue.sh" ]]; then
+  source "${INFRA_LIB}/update_queue.sh"
+elif [[ -f "${PACKAGER_RAW}/lib/update_queue.sh" ]]; then
+  source "${PACKAGER_RAW}/lib/update_queue.sh"
+fi
+if declare -F vibed_register_app >/dev/null 2>&1; then
+  _env_val() {
+    local key="$1"
+    [[ -f "$DEST/.env" ]] || return 0
+    grep -E "^${key}=" "$DEST/.env" 2>/dev/null | head -1 | cut -d= -f2-
+  }
+  _REG_IMAGE=""
+  case "$_REG_ROLE" in
+    api) _REG_IMAGE="$(_env_val BACKEND_IMAGE)" ;;
+    ui) _REG_IMAGE="$(_env_val UI_IMAGE)" ;;
+    nodes) _REG_IMAGE="$(_env_val WORKER_IMAGE)" ;;
+    gateway) _REG_IMAGE="$(_env_val NGINX_IMAGE)" ;;
+  esac
+  vibed_register_app "$PRODUCT_NAME" "$_REG_ROLE" "$DEST" "$_REG_IMAGE" || true
+  _HOOK_TOKEN="$(
+    python3 -c "
+import sys
+sys.path.insert(0, '${INFRA_LIB}')
+from pathlib import Path
+from load_config import load_packageconfig
+try:
+    from webhook import webhook_from_packageconfig
+except ImportError:
+    webhook_from_packageconfig = None
+c = load_packageconfig(Path('${PC_LOCAL}'))
+if webhook_from_packageconfig:
+    print(webhook_from_packageconfig(c).get('token') or '')
+else:
+    print((c.get('webhook') or {}).get('token') or '')
+"
+  )"
+  if [[ -n "${_HOOK_TOKEN}" ]]; then
+    AGENT_HOME="$(vibed_agent_home 2>/dev/null || echo "${VIBED_HOME:-$HOME/services/vibed-infra}/update-agent")"
+    mkdir -p "${AGENT_HOME}/tokens"
+    printf '%s\n' "$_HOOK_TOKEN" >"${AGENT_HOME}/tokens/${PRODUCT_NAME}"
+    echo "webhook token registered for ${PRODUCT_NAME}"
+  fi
 fi
 if [[ -f "${PACKAGER_RAW}/templates/persist-logs/install-persist-logs.sh" ]]; then
   PACKAGER_RAW="$PACKAGER_RAW" VIBED_HOME="${VIBED_HOME:-}" bash "${PACKAGER_RAW}/templates/persist-logs/install-persist-logs.sh" || true

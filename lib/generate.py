@@ -59,6 +59,14 @@ server {{
   set ${be_var}_upstream {backend}:{backend_port};
   set ${ui_var}_upstream {ui}:{ui_port};
 
+  location /_vibed/hooks/ {{
+    proxy_pass http://host.docker.internal:19200;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }}
+
   location = {health} {{
 {proxy_headers}
   }}

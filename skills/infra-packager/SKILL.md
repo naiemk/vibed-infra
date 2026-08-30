@@ -27,7 +27,7 @@ PACKAGER="$(node -e "console.log(require('path').dirname(require.resolve('vibed-
 exec bash "$PACKAGER/package.sh" --product "$ROOT" --out "$ROOT/dist"
 ```
 
-4. **Build images** — Dockerfiles in `app/`; tag `:local` for dev or push to GHCR for prod; reference image names in `*-config.yaml`.
+4. **Build images** — Dockerfiles in `app/`; tag `:local` for dev or push to GHCR for prod; reference image names in `*-config.yaml`. The reusable GHCR workflow notifies the VPS after push via GitHub Actions OIDC (`id-token: write`).
 
 5. **Package and commit** `dist/` (includes `DNS-SKILL.md` with domains + public IP):
 

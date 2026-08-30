@@ -15,8 +15,14 @@ else
 fi
 
 HOME_AGENT="$(vibed_queue_dirs)"
-mkdir -p "$HOME_AGENT/lib"
+mkdir -p "$HOME_AGENT/lib" "$HOME_AGENT/tokens"
 cp -f "${PACKAGER}/lib/update_queue.sh" "$HOME_AGENT/lib/update_queue.sh"
+if [[ -f "${PACKAGER}/lib/webhook.py" ]]; then
+  cp -f "${PACKAGER}/lib/webhook.py" "$HOME_AGENT/lib/webhook.py"
+fi
+if [[ -f "${PACKAGER}/lib/github_oidc.py" ]]; then
+  cp -f "${PACKAGER}/lib/github_oidc.py" "$HOME_AGENT/lib/github_oidc.py"
+fi
 cp -f "${SCRIPT_DIR}/agent.sh" "$HOME_AGENT/agent.sh"
 cp -f "${SCRIPT_DIR}/webhook_server.py" "$HOME_AGENT/webhook_server.py"
 cp -f "${SCRIPT_DIR}/enqueue.sh" "$HOME_AGENT/enqueue.sh"
@@ -24,7 +30,9 @@ chmod +x "$HOME_AGENT/agent.sh" "$HOME_AGENT/enqueue.sh"
 
 if [[ ! -f "$HOME_AGENT/.env" ]]; then
   cat >"$HOME_AGENT/.env" <<EOF
-WEBHOOK_SECRET=change-me-webhook-secret
+# Optional override. Per-product tokens are written to tokens/ at install
+# from gateway.publicIp + site host — no GitHub secret required.
+WEBHOOK_SECRET=
 WEBHOOK_PORT=19200
 EOF
 fi
@@ -49,12 +57,14 @@ elif command -v crontab >/dev/null 2>&1; then
   echo "installed user cron for update-agent"
 fi
 
-# Optional: start webhook in background if not running
+# Restart webhook so bind/code updates apply
 if command -v python3 >/dev/null 2>&1; then
-  if ! pgrep -f "webhook_server.py" >/dev/null 2>&1; then
-    nohup python3 "$HOME_AGENT/webhook_server.py" >>"$HOME_AGENT/webhook.log" 2>&1 &
-    echo "started webhook_server.py (port from .env)"
+  if pgrep -f "$HOME_AGENT/webhook_server.py" >/dev/null 2>&1; then
+    pkill -f "$HOME_AGENT/webhook_server.py" >/dev/null 2>&1 || true
+    sleep 0.2
   fi
+  nohup python3 "$HOME_AGENT/webhook_server.py" >>"$HOME_AGENT/webhook.log" 2>&1 &
+  echo "started webhook_server.py (port from .env, 0.0.0.0)"
 fi
 
 echo "update-agent ready at $HOME_AGENT"

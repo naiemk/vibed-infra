@@ -32,11 +32,14 @@ gateway:
 
 Defaults: containers `{name}-api` / `{name}-ui` / `{name}-worker`; host gateway container `vps-gateway`.
 
+Compiled `packageconfig.yaml` also includes `webhook.url` / `fallbackUrl` (from `publicIp` + first `sites[].host`). After a default-branch image push, the reusable GHCR workflow mints a GitHub Actions OIDC JWT and POSTs to those URLs — no GitHub webhook UI and no extra secrets. `webhook.token` remains for local curl.
+
 ## dist/ (generated)
 
 | Path | Purpose |
 |------|---------|
 | `install-*.sh` | wget entrypoints |
+| `notify-vps-pull.py` | Called by GHCR workflow after push; uses compiled `webhook` |
 | `DNS-SKILL.md` | Paste into AU browser agent; includes domains + `publicIp` when set |
 | `packageconfig.yaml` | compiled config |
 | `start-*.sh` / `update-*.sh` | lifecycle |
@@ -47,6 +50,8 @@ Gateway install writes `$GATEWAY_HOME/apps/{name}/sites.conf` (host-extension mo
 ## Auto-update
 
 When `*_AUTO_UPDATE=1`, cron **enqueues** into the machine update-agent (serial pulls). Fallback: direct `update-*.sh` if agent missing. After update: dangling image prune (`DOCKER_AUTO_PRUNE`).
+
+Immediate pulls: install registers the app. The reusable docker-build workflow mints a GitHub Actions OIDC JWT and POSTs to `https://{host}/_vibed/hooks/ghcr` (fallback `http://{publicIp}/_vibed/hooks/ghcr`) after pushing `:main`. The VPS verifies GitHub’s signature (`id-token: write` on the caller job). Local curl may use the compiled `webhook.token`.
 
 ## Persist logs
 

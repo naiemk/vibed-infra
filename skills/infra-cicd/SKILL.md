@@ -16,24 +16,30 @@ Use reusable workflow [`github/workflows/docker-build-reusable.yml`](../../githu
 jobs:
   images:
     uses: naiemk/vibed-infra/.github/workflows/docker-build-reusable.yml@main
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     with:
       dockerfile: app/api/Dockerfile
       image: ghcr.io/${{ github.repository_owner }}/my-api
-    secrets: inherit
 ```
 
 Tags: `:main`, `main-<sha>`, semver on tag push.
 
+On the default branch, the reusable workflow mints a GitHub Actions OIDC JWT (audience = webhook URL) and POSTs to `https://{host}/_vibed/hooks/ghcr` (fallback `http://{publicIp}/…`). No GitHub Packages webhook and no extra secrets. Disable with `notify: false`. The caller job **must** include `id-token: write`.
+
 ## CI in vibed-infra
 
-1. **`npm test`** — runs `package.sh` for `examples/vps-hello`, dry-runs each `dist/install-*.sh` with `TLS_MODE=lab` (no Docker / no certbot).
-2. **`dist-e2e` matrix** — `api`, `ui`, `nodes` via `examples/vps-hello/test-dist.sh` (builds images + proves each profile).
-3. **`multi-app-e2e`** — `scripts/e2e-multi-app.sh` / `npm run test:e2e-multi` (two apps, localhost wget, shared host gateway + lab TLS).
+1. **`npm test`** — runs `package.sh` for `examples/vps-hello`, dry-runs each `dist/install-*.sh` with `TLS_MODE=lab` (no Docker / no certbot). Includes local openssl JWT verify of the webhook.
+2. **`oidc-webhook-e2e`** — `scripts/e2e-oidc-webhook.sh` mints a **real** GitHub OIDC token in CI and POSTs a local webhook (`REQUIRE_OIDC_E2E=1`).
+3. **`dist-e2e` matrix** — `api`, `ui`, `nodes` via `examples/vps-hello/test-dist.sh` (builds images + proves each profile).
+4. **`multi-app-e2e`** — `scripts/e2e-multi-app.sh` / `npm run test:e2e-multi` (two apps, localhost wget, shared host gateway + lab TLS).
 
 ## Product repo CI
 
 1. Run `./package.sh` and fail if `dist/` drifted from templates (optional `git diff --exit-code dist`).
-2. Build/push images to GHCR; bump image tags in `*-config.yaml`; re-package.
+2. Build/push images to GHCR (reusable workflow notifies the VPS automatically).
 3. Optional job: `test-dist.sh --profile api` on a Docker-enabled runner.
 
 ## Checklist

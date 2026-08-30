@@ -79,3 +79,7 @@ profiles:
         createPath: /api/notes
     publicIp: 203.0.113.10
     tlsEmail: "ops@example.com"
+webhook:
+  url: "https://hello.example.com/_vibed/hooks/ghcr"
+  fallbackUrl: "http://203.0.113.10/_vibed/hooks/ghcr"
+  token: c575d34f151237190a875bc4ea3af4cf

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from load_config import load_packageconfig
+from webhook import webhook_spec
 
 
 def load_product(product_dir: Path) -> dict[str, Any]:
@@ -111,6 +112,9 @@ def compile_packageconfig(
     if tls_email:
         gateway_profile["tlsEmail"] = str(tls_email)
 
+    first_host = str(sites[0]["host"]) if sites else ""
+    webhook = webhook_spec(name, str(public_ip), first_host)
+
     return {
         "name": name,
         "version": infra.get("version") or 1,
@@ -164,6 +168,7 @@ def compile_packageconfig(
             },
             "gateway": gateway_profile,
         },
+        "webhook": webhook,
         "_meta": {
             "apiContainer": api_name,
             "uiContainer": ui_name,

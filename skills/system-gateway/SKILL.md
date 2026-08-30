@@ -60,7 +60,7 @@ cd ~/services/gateway
 
 ## Webhook path
 
-Host `00-default.conf` proxies `/_vibed/hooks/` to the update-agent on `host.docker.internal:19200` (see infra-update-agent skill).
+Host `00-default.conf` (HTTP) and each app `sites.conf` (HTTPS) proxy `/_vibed/hooks/` to the update-agent on `host.docker.internal:19200`. Image builds notify this path automatically — see infra-update-agent skill.
 
 ## Pitfalls
 
