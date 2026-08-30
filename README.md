@@ -19,7 +19,7 @@ git add dist && git commit && git push
 
 ## Operator flow (VPS)
 
-Non-root agent prep (SSH, Docker group, uid 1000 data dirs): [`skills/agent-vps-prep/SKILL.md`](skills/agent-vps-prep/SKILL.md).
+Non-root agent prep (SSH, Docker group, one-time uid-1000 operator or ~/services ACL): [`skills/agent-vps-prep/SKILL.md`](skills/agent-vps-prep/SKILL.md).
 
 ```bash
 # 1) DNS — paste dist/DNS-SKILL.md into AU browser agent
