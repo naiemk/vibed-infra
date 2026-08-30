@@ -220,7 +220,16 @@ def dump_yaml(data: Any, indent: int = 0) -> str:
                     else:
                         lines.append(f"{sp}{pref}{k}: {v}")
             else:
-                lines.append(f"{sp}- {item}")
+                s = str(item)
+                if isinstance(item, bool):
+                    s = "true" if item else "false"
+                elif item is None:
+                    s = ""
+                elif any(c in s for c in ":{}[]#&*!|>'\"%@`") or s == "" or s.lower() in (
+                    "null", "true", "false", "yes", "no", "on", "off",
+                ):
+                    s = json.dumps(s)
+                lines.append(f"{sp}- {s}")
         return "\n".join(lines) + ("\n" if lines else "")
     return f"{sp}{data}\n"
 

@@ -36,6 +36,15 @@ assert len(c['webhook']['token']) == 32
 print('product_config ok')
 "
 
+python3 -c "
+import sys
+sys.path.insert(0, 'lib')
+from product_config import dump_yaml
+out = dump_yaml({'origins': ['*']})
+assert '\"*\"' in out, repr(out)
+print('dump_yaml list scalar quoting ok')
+"
+
 bash examples/vps-hello/package.sh
 test -f examples/vps-hello/dist/install-api.sh
 test -f examples/vps-hello/dist/packageconfig.yaml

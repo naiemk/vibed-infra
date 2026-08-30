@@ -7,6 +7,8 @@ description: >-
 
 # System-wide host gateway (multi-app)
 
+Fresh VPS as non-root agent: see [agent-vps-prep](../agent-vps-prep/SKILL.md).
+
 ## Model
 
 ```
@@ -64,6 +66,7 @@ Host `00-default.conf` (HTTP) and each app `sites.conf` (HTTPS) proxy `/_vibed/h
 
 ## Pitfalls
 
+- Operator user / Docker / uid 1000 data dirs: [agent-vps-prep](../agent-vps-prep/SKILL.md).
 - Do not run a second standalone nginx on 80/443.
 - Container names in `sites.conf` must match running API/UI names on `vps-edge`.
 - After cert renewal or `setup-tls.sh`, reload happens automatically when the gateway container is already running.
