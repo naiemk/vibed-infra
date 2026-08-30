@@ -2,8 +2,7 @@
 name: infra-cicd
 description: >-
   Set up GitHub Actions CI/CD for infra-packaged products: GHCR image build,
-  package validation, and dist e2e (api/ui/nodes). Use when adding deploy
-  pipelines for Backend/UI/worker images.
+  OIDC notify for immediate VPS pulls, package validation, and dist e2e.
 ---
 
 # Infra packager CI/CD
@@ -39,13 +38,14 @@ On the default branch, the reusable workflow mints a GitHub Actions OIDC JWT (au
 ## Product repo CI
 
 1. Run `./package.sh` and fail if `dist/` drifted from templates (optional `git diff --exit-code dist`).
-2. Build/push images to GHCR (reusable workflow notifies the VPS automatically).
+2. Build/push images to GHCR (reusable workflow notifies the VPS; requires `id-token: write`).
 3. Optional job: `test-dist.sh --profile api` on a Docker-enabled runner.
 
 ## Checklist
 
 - [ ] Four YAML templates under `templates/` (`gateway.publicIp` / `tlsEmail` / `sites[]` set for production)
 - [ ] Committed `dist/` matches `./package.sh` output (including `DNS-SKILL.md`)
-- [ ] Image names in configs match GHCR
+- [ ] Image names in configs match GHCR (`ghcr.io/{owner}/…` so OIDC `repository_owner` can match)
+- [ ] GHCR reusable job has `permissions.id-token: write`
 - [ ] `npm test` / install dry-run passes
 - [ ] Secrets not in templates — only `.env.*.example` placeholders (publicIp/domain are OK to commit)

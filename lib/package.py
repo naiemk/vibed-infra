@@ -351,6 +351,10 @@ wget -qO- https://raw.githubusercontent.com/ORG/REPO/main/dist/install-gateway.s
 Network: `{meta['network']}` (shared host edge). API container: `{meta['apiContainer']}`.
 Gateway install bootstraps `~/services/gateway` once, then drops `apps/{{product}}/sites.conf`.
 
+## Image updates
+
+wget install registers this product with the machine update-agent. A GHCR `:main` push (reusable workflow + `id-token: write`) POSTs `/_vibed/hooks/ghcr` so the VPS pulls immediately. Cron `*_AUTO_UPDATE` is a backup. See the packager’s infra-update-agent skill.
+
 ## DNS (AU agent)
 
 Copy [`DNS-SKILL.md`](DNS-SKILL.md) into an AU agent browser extension. Domains and `gateway.publicIp` are baked in when configured; confirm the IP with the operator.

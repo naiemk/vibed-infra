@@ -2,8 +2,8 @@
 name: infra-packager
 description: >-
   Wire a new product to the infra VPS packager: four YAML configs, package.sh →
-  committed dist/, Docker images, and CI. Use when adding Backend/UI/worker
-  deploy to a repo or migrating from ad-hoc deploy/install scripts.
+  committed dist/, Docker images, GHCR OIDC pulls, and CI. Use when adding
+  Backend/UI/worker deploy to a repo or migrating from ad-hoc install scripts.
 ---
 
 # Infra packager — onboard a product
@@ -17,7 +17,7 @@ description: >-
 
 1. **Depend on** [`vibed-infra`](https://www.npmjs.com/package/vibed-infra) or clone this repo for `package.sh`.
 
-2. **Create** `templates/` with four files — see [`schema/packageconfig.md`](../../schema/packageconfig.md) and [`examples/vps-hello/templates/`](../../examples/vps-hello/templates/). Set `gateway.publicIp`, `gateway.tlsEmail`, and `gateway.sites[].host` for DNS-SKILL + HTTPS.
+2. **Create** `templates/` with four files — see [`schema/packageconfig.md`](../../schema/packageconfig.md) and [`examples/vps-hello/templates/`](../../examples/vps-hello/templates/). Set `gateway.publicIp`, `gateway.tlsEmail`, and `gateway.sites[].host` for DNS-SKILL + HTTPS (those values are also the GHCR notify URLs).
 
 3. **Add** a tiny product `package.sh`:
 
@@ -27,7 +27,7 @@ PACKAGER="$(node -e "console.log(require('path').dirname(require.resolve('vibed-
 exec bash "$PACKAGER/package.sh" --product "$ROOT" --out "$ROOT/dist"
 ```
 
-4. **Build images** — Dockerfiles in `app/`; tag `:local` for dev or push to GHCR for prod; reference image names in `*-config.yaml`. The reusable GHCR workflow notifies the VPS after push via GitHub Actions OIDC (`id-token: write`).
+4. **Images** — Dockerfiles in `app/`; tag `:local` for dev; GHCR `:main` for prod (names in `*-config.yaml`). Immediate VPS pull uses the reusable GHCR workflow with `id-token: write` — see infra-cicd and infra-update-agent. No extra GitHub secret.
 
 5. **Package and commit** `dist/` (includes `DNS-SKILL.md` with domains + public IP):
 
@@ -36,9 +36,9 @@ exec bash "$PACKAGER/package.sh" --product "$ROOT" --out "$ROOT/dist"
 git add dist && git commit && git push
 ```
 
-6. **CI** — `npm test` (packager validate + install dry-run); optional `test-dist.sh --profile api|ui|nodes` and `npm run test:e2e-multi`. See [`examples/vps-hello/test-dist.sh`](../../examples/vps-hello/test-dist.sh).
+6. **CI** — product repo: package drift check + GHCR build (notifies VPS). Packager repo: `npm test`, `oidc-webhook-e2e`, `test-dist.sh`, `npm run test:e2e-multi`.
 
-7. **VPS** — DNS first (paste `dist/DNS-SKILL.md` into AU agent), then wget:
+7. **VPS** — DNS first (paste `dist/DNS-SKILL.md` into AU agent), then wget. Install registers the app with the update-agent so the next GHCR push can pull immediately:
 
 ```bash
 wget -qO- .../dist/install-api.sh | bash
@@ -56,3 +56,4 @@ wget -qO- .../dist/install-gateway.sh | bash   # bootstraps host + setup-tls.sh
 - Gateway container names in `gateway.sites[]` must match running API/UI container names on `network.edge`.
 - UI is a separate profile; gateway is nginx-only and does not start the UI.
 - Prefer Let's Encrypt via `gateway.tlsEmail`; use `TLS_MODE=lab` only for CI/lab.
+- Product GHCR workflow must set `id-token: write` or the VPS will not get an immediate pull.

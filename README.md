@@ -41,10 +41,17 @@ Multi-app: further products’ `install-gateway.sh` only add `apps/{other}/sites
 | Path | Purpose |
 |------|---------|
 | `~/services/gateway` | Host nginx (`GATEWAY_HOME`) |
-| `~/services/vibed-infra/update-agent` | Serial pull queue + optional GHCR webhook |
+| `~/services/vibed-infra/update-agent` | Serial pull queue; GHCR notify via GitHub Actions OIDC |
 | `~/services/vibed-infra/persist-logs` | Per-app WALs + optional R2/S3 ship |
 
-Auto-update cron **enqueues** work; the agent processes one job at a time. After a GHCR push, the reusable image workflow mints a GitHub Actions OIDC JWT and notifies `https://{domain}/_vibed/hooks/ghcr` (fallback `http://{publicIp}/…`) so the pull does not wait for cron. Updates prune dangling images (`DOCKER_AUTO_PRUNE=1`).
+## Image updates (docker pull)
+
+Install registers each role in the machine **update-agent**. Two paths enqueue work; the agent runs **one pull at a time** (`update-*.sh` is digest-gated — no restart if the image digest is unchanged):
+
+1. **Immediate** — push `:main` with the reusable GHCR workflow (`id-token: write`). CI mints an OIDC JWT and POSTs `https://{site host}/_vibed/hooks/ghcr` (fallback `http://{publicIp}/…`). No GitHub webhook UI or `VIBED_WEBHOOK_SECRET`.
+2. **Cron** — if `*_AUTO_UPDATE=1`, periodic enqueue (backup if notify is missed).
+
+See [`skills/infra-update-agent/SKILL.md`](skills/infra-update-agent/SKILL.md). After a successful update, dangling images are pruned (`DOCKER_AUTO_PRUNE=1`).
 
 ## Layout
 
@@ -55,7 +62,7 @@ Auto-update cron **enqueues** work; the agent processes one job at a time. After
 | `templates/update-agent/` | Queue agent + webhook |
 | `templates/persist-logs/` | Shipper install |
 | `lib/persistlog/` | Python append / seal / replay |
-| `skills/` | system-gateway, infra-update-agent, persist-logs, dns-configure |
+| `skills/` | system-gateway, infra-update-agent, infra-cicd, infra-packager, persist-logs, dns-configure |
 
 ## Environment
 
@@ -63,6 +70,7 @@ Auto-update cron **enqueues** work; the agent processes one job at a time. After
 |----------|---------|
 | `GATEWAY_HOME` | Host gateway dir (default `~/services/gateway`) |
 | `VIBED_HOME` | Machine vibed root (default `~/services/vibed-infra`) |
+| `VIBED_UPDATE_AGENT` | Override update-agent dir (default `$VIBED_HOME/update-agent`) |
 | `GATEWAY_PUBLIC_IP` | VPS IPv4 (from `gateway.publicIp`) |
 | `TLS_EMAIL` / `TLS_MODE` | Let’s Encrypt email; `lab` or `letsencrypt` |
 | `PERSIST_LOG_DIR` | Per-service event log dir |
@@ -72,6 +80,7 @@ Auto-update cron **enqueues** work; the agent processes one job at a time. After
 
 ```bash
 npm test
+npm run test:oidc       # real GitHub OIDC mint; skips locally unless ACTIONS_ID_TOKEN_* set
 npm run test:dist
 npm run test:e2e-multi   # two apps, localhost wget|bash, shared host gateway
 ```

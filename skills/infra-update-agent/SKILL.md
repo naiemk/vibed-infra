@@ -3,44 +3,50 @@ name: infra-update-agent
 description: >-
   Machine-level serial Docker update queue for vibed-infra apps. Use when
   multiple products share one VPS and must not pull images in parallel; includes
-  GHCR webhook enqueue via GitHub Actions OIDC (no extra GitHub secrets).
+  immediate GHCR pulls via GitHub Actions OIDC (no extra GitHub secrets).
 ---
 
 # Serial update agent
 
 ## Why
 
-Five apps with auto-update cron would each `docker pull` at once and overload the box. The **update-agent** is installed once; apps only **enqueue** jobs.
+Five apps with auto-update cron would each `docker pull` at once and overload the box. The **update-agent** is installed once; apps only **enqueue** jobs. The agent runs `update-*.sh`, which is **digest-gated**: pull if the registry digest changed, restart only if the running container is stale.
 
 ## Layout
 
 ```
 ~/services/vibed-infra/update-agent/
   queue/ processing/ done/ failed/
-  registry/{app}/{role}.json
-  tokens/{app}     # optional local curl; CI uses OIDC instead
+  registry/{app}/{role}.json   # image + installDir (written at wget install)
+  tokens/{app}                # optional local curl; CI uses OIDC
   agent.sh
   enqueue.sh
-  webhook_server.py # 0.0.0.0:19200 (firewall: do not expose this port)
+  webhook_server.py            # 0.0.0.0:19200 — do not open this port publicly
   lib/github_oidc.py
-  .env              # WEBHOOK_PORT; optional WEBHOOK_SECRET
+  .env                         # WEBHOOK_PORT=19200
 ```
 
-## Flow
+Override the directory with `VIBED_UPDATE_AGENT` (wins over `VIBED_HOME`).
 
-1. Install registers the app (image + install dir).
-2. Cron enqueues; agent cron (`*/5`) processes **serially**.
-3. Image push: reusable GHCR workflow mints a GitHub Actions OIDC JWT (audience = webhook URL) and POSTs `{package,tag}` to `/_vibed/hooks/ghcr`.
-4. Webhook verifies the JWT against GitHub’s JWKS (`iss`, `aud`, `exp`, RS256), then enqueues only registry images whose name contains `repository_owner`.
-5. Agent runs `update-*.sh` immediately.
+## Pull paths
 
-Gateway exposes `/_vibed/hooks/` on HTTP (port 80) and on each HTTPS site host.
+```
+git push main
+  → reusable GHCR workflow builds/pushes :main
+  → notify-vps-pull.py mints OIDC JWT (aud = webhook URL)
+  → POST https://{host}/_vibed/hooks/ghcr   (fallback http://{publicIp}/…)
+  → nginx → webhook_server (verify GitHub JWKS)
+  → enqueue matching registry entries (owner must appear in image name)
+  → agent.sh → update-{role}.sh → docker pull + restart if digest changed
+```
 
-## Zero extra GitHub setup
+- **Immediate:** default-branch image push. Caller job needs `id-token: write`. No GitHub Packages webhook and no `VIBED_WEBHOOK_SECRET`.
+- **Cron backup:** `*_AUTO_UPDATE=1` enqueues on an interval; agent cron `*/5` drains the queue if notify was missed.
+- **Manual:** `bash ~/services/vibed-infra/update-agent/enqueue.sh /path/to/api-install`
 
-`gateway.publicIp` + `gateway.sites[].host` already in product config are the URLs. Auth is GitHub’s signature — no `VIBED_WEBHOOK_SECRET`.
+Gateway HTTP (`00-default.conf`) and each HTTPS site proxy `/_vibed/hooks/` to `host.docker.internal:19200`. Keep **19200** off the public firewall; only 80/443.
 
-Product workflow must grant OIDC to the reusable job:
+## Product CI
 
 ```yaml
 jobs:
@@ -55,10 +61,11 @@ jobs:
       image: ghcr.io/${{ github.repository_owner }}/my-api
 ```
 
-Local curl can still use `X-Vibed-Secret` from `tokens/{app}` (compiled hash). Optional `WEBHOOK_SECRET` override remains.
+URLs come from `gateway.publicIp` + `gateway.sites[].host` already in config (`dist/packageconfig.yaml` `webhook.url` / `fallbackUrl`). Disable notify with `notify: false`.
 
-## Register / enqueue manually
+Local curl can send `X-Vibed-Secret` from `tokens/{app}` (compiled hash). Optional `WEBHOOK_SECRET` still works as an override.
 
-```bash
-bash ~/services/vibed-infra/update-agent/enqueue.sh /path/to/api-install
-```
+## Tests
+
+- `npm test` — openssl-signed JWT (same verifier) + enqueue under `VIBED_UPDATE_AGENT`
+- `npm run test:oidc` / CI job `oidc-webhook-e2e` — real GitHub OIDC mint against a local webhook

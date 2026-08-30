@@ -2,4 +2,4 @@
 
 | Path | What it shows |
 |------|----------------|
-| [`vps-hello/`](vps-hello/) | Four YAML configs → `package.sh` → committed `dist/` → wget VPS install |
+| [`vps-hello/`](vps-hello/) | Four YAML configs → `package.sh` → committed `dist/` → wget VPS install; GHCR `:main` pull via OIDC |
