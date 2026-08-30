@@ -27,7 +27,12 @@ cleanup() {
     2>/dev/null || true
   docker network rm "$NETWORK" 2>/dev/null || true
   docker volume rm "${GW_NAME}-nginx-cfg" 2>/dev/null || true
-  rm -rf "$WORK"
+  # API data dirs are owned by container uid 1000 — wipe via docker if needed
+  if [[ -d "$WORK" ]]; then
+    rm -rf "$WORK" 2>/dev/null || \
+      docker run --rm -v "$(dirname "$WORK"):/parent" alpine:3.20 \
+        rm -rf "/parent/$(basename "$WORK")" 2>/dev/null || true
+  fi
   exit "$code"
 }
 trap cleanup EXIT
