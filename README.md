@@ -19,6 +19,8 @@ git add dist && git commit && git push
 
 ## Operator flow (VPS)
 
+Non-root agent prep (SSH, Docker group, uid 1000 data dirs): [`skills/agent-vps-prep/SKILL.md`](skills/agent-vps-prep/SKILL.md).
+
 ```bash
 # 1) DNS — paste dist/DNS-SKILL.md into AU browser agent
 # 2) App roles
@@ -62,7 +64,7 @@ See [`skills/infra-update-agent/SKILL.md`](skills/infra-update-agent/SKILL.md). 
 | `templates/update-agent/` | Queue agent + webhook |
 | `templates/persist-logs/` | Shipper install |
 | `lib/persistlog/` | Python append / seal / replay |
-| `skills/` | system-gateway, infra-update-agent, infra-cicd, infra-packager, persist-logs, dns-configure |
+| `skills/` | system-gateway, agent-vps-prep, infra-update-agent, infra-cicd, infra-packager, persist-logs, dns-configure |
 
 ## Environment
 
