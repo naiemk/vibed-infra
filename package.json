@@ -1,6 +1,6 @@
 {
   "name": "vibed-infra",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Product-agnostic VPS packager: wget install, Docker Compose, TLS/nginx, auto-update",
   "license": "MIT",
   "repository": {
