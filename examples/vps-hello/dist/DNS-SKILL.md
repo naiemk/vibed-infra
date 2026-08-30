@@ -1,0 +1,43 @@
+---
+name: Configure DNS for hello-vps
+description: >-
+  Paste this entire skill into an AU agent browser extension. Configure DNS A
+  records for the domains below to point at the operator VPS. Ask the user for
+  the VPS IPv4 address first — never invent an IP.
+---
+
+# DNS setup for hello-vps
+
+## Before you change anything
+
+1. **Ask the user for the VPS public IPv4 address.** Do not guess or invent IPs.
+2. Optionally ask for IPv6 if they want AAAA records.
+3. Confirm which DNS provider UI they use (Cloudflare, registrar, Route53, etc.).
+4. Ensure you are logged into that provider in the browser before editing records.
+
+Placeholder used below: `{{VPS_IP}}` — replace with the IPv4 the user gives you.
+
+## Records to create or update
+
+For each hostname, create an **A** record pointing to `{{VPS_IP}}` (TTL auto or 300).
+
+| Hostname | Type | Value |
+|----------|------|-------|
+| `hello.example.com` | A | `{{VPS_IP}}` |
+| `www.hello.example.com` | A | `{{VPS_IP}}` |
+
+Do **not** create a CNAME for the apex unless the user explicitly asks. Prefer A records for all names listed.
+
+If the user also provides an IPv6 address, add matching **AAAA** records for the same names.
+
+## After saving DNS
+
+1. Wait for propagation (often 1–5 minutes on Cloudflare; longer elsewhere).
+2. Verify with dig/nslookup that each name resolves to the given VPS IP.
+3. Tell the user they can run certbot / `./start-gateway.sh` on the VPS after DNS is green (TLS needs the names to resolve).
+
+## Safety
+
+- Never invent IPs, domains, or credentials.
+- Do not delete unrelated DNS records.
+- If a record already exists with a different target, confirm with the user before overwriting.

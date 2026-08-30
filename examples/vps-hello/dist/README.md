@@ -11,4 +11,9 @@ wget -qO- https://raw.githubusercontent.com/ORG/REPO/main/dist/install-nodes.sh 
 wget -qO- https://raw.githubusercontent.com/ORG/REPO/main/dist/install-gateway.sh | bash
 ```
 
-Network: `hello-vps-edge`. API container: `hello-vps-api`.
+Network: `vps-edge` (shared host edge). API container: `hello-vps-api`.
+Gateway install bootstraps `~/services/gateway` once, then drops `apps/{product}/sites.conf`.
+
+## DNS (AU agent)
+
+Copy [`DNS-SKILL.md`](DNS-SKILL.md) into an AU agent browser extension and give it your VPS IP.

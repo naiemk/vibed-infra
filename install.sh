@@ -57,7 +57,7 @@ LOCAL_PACKAGER=0
 if [[ "$PACKAGER_RAW" =~ ^/ ]] && [[ -d "$PACKAGER_RAW/lib" ]]; then
   LOCAL_PACKAGER=1
 fi
-for lib in fetch.sh env.sh prompt.sh tls.sh load_config.py generate.py; do
+for lib in fetch.sh env.sh prompt.sh tls.sh load_config.py generate.py host_gateway.sh; do
   if [[ "$LOCAL_PACKAGER" == "1" ]]; then
     cp -f "${PACKAGER_RAW}/lib/${lib}" "${INFRA_LIB}/${lib}"
   else
@@ -79,6 +79,8 @@ source "${INFRA_LIB}/fetch.sh"
 source "${INFRA_LIB}/prompt.sh"
 # shellcheck source=/dev/null
 source "${INFRA_LIB}/tls.sh"
+# shellcheck source=/dev/null
+source "${INFRA_LIB}/host_gateway.sh"
 
 cd "$DEST"
 
@@ -203,15 +205,85 @@ for e in extras:
 done
 
 if [[ "$ROLE" == "gateway" ]]; then
-  mkdir -p "$DEST/gateway/conf.d"
-  infra_write_if_missing "${PRODUCT_RAW}/gateway/nginx.conf" "$DEST/gateway/nginx.conf" 0
-  infra_write_template "${PRODUCT_RAW}/gateway/nginx.conf" "$DEST/gateway/nginx.conf" 0
-  if python3 "${INFRA_LIB}/generate.py" "$PC_LOCAL" --profile "$PROFILE" -o "$DEST/gateway/conf.d/domains.conf" 2>/dev/null; then
-    echo "generated: gateway/conf.d/domains.conf"
-  else
-    infra_write_if_missing "${PRODUCT_RAW}/gateway/conf.d/domains.conf" "$DEST/gateway/conf.d/domains.conf" 0
-    infra_write_template "${PRODUCT_RAW}/gateway/conf.d/domains.conf" "$DEST/gateway/conf.d/domains.conf" 0
+  PRODUCT_NAME="$(
+    python3 -c "
+import sys
+sys.path.insert(0, '${INFRA_LIB}')
+from load_config import load_packageconfig
+from pathlib import Path
+c = load_packageconfig(Path('${PC_LOCAL}'))
+print(c.get('name') or 'app')
+"
+  )"
+  GATEWAY_HOME="${GATEWAY_HOME:-$(vibed_gateway_home)}"
+  export GATEWAY_HOME
+  mkdir -p "$DEST/gateway/conf.d" "$DEST/lib"
+
+  # Phase 1: bootstrap shared host gateway once
+  vibed_bootstrap_host_gateway "$PACKAGER_RAW"
+  if [[ "$LOCAL_PACKAGER" == "1" ]]; then
+    cp -f "${PACKAGER_RAW}/lib/env.sh" "${GATEWAY_HOME}/lib-env.sh"
+    cp -f "${PACKAGER_RAW}/lib/host_gateway.sh" "${GATEWAY_HOME}/lib/host_gateway.sh" 2>/dev/null || \
+      mkdir -p "${GATEWAY_HOME}/lib" && cp -f "${PACKAGER_RAW}/lib/host_gateway.sh" "${GATEWAY_HOME}/lib/host_gateway.sh"
   fi
+
+  # Phase 2: app extension — sites.conf under host apps/{name}/
+  SITES_TMP="$DEST/gateway/sites.conf"
+  python3 "${INFRA_LIB}/generate.py" "$PC_LOCAL" --profile "$PROFILE" --mode app -o "$SITES_TMP"
+  META_TMP="$DEST/gateway/meta.json"
+  python3 -c "
+import json, sys
+from pathlib import Path
+sys.path.insert(0, '${INFRA_LIB}')
+from load_config import load_packageconfig, get_profile
+c = load_packageconfig(Path('${PC_LOCAL}'))
+p = get_profile(c, '${PROFILE}')
+meta = {
+  'name': c.get('name'),
+  'installDir': '${DEST}',
+  'sites': p.get('sites') or [],
+  'images': c.get('images') or {},
+}
+Path('${META_TMP}').write_text(json.dumps(meta, indent=2) + '\n')
+"
+  vibed_install_app_sites "$PRODUCT_NAME" "$SITES_TMP" "$META_TMP"
+
+  # Product install dir keeps thin wrappers that point at host gateway
+  infra_write_if_missing "${PRODUCT_RAW}/gateway/nginx.conf" "$DEST/gateway/nginx.conf" 0
+  cat >"$DEST/start-gateway.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export GATEWAY_HOME="${GATEWAY_HOME}"
+# shellcheck source=/dev/null
+source "\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)/.infra-lib/host_gateway.sh" 2>/dev/null \\
+  || source "${GATEWAY_HOME}/lib/host_gateway.sh"
+vibed_reload_or_start_gateway
+EOF
+  cat >"$DEST/update-gateway.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+cd "\$SCRIPT_DIR"
+# shellcheck source=lib-env.sh
+[[ -f lib-env.sh ]] && source lib-env.sh && load_dotenv .env
+export GATEWAY_HOME="${GATEWAY_HOME}"
+# Regenerate this app's sites and reload host (image update is host's update-gateway.sh)
+if [[ -f .packageconfig.yaml ]]; then
+  python3 "\${SCRIPT_DIR}/.infra-lib/generate.py" .packageconfig.yaml --profile gateway --mode app \\
+    -o "\${GATEWAY_HOME}/apps/${PRODUCT_NAME}/sites.conf" 2>/dev/null \\
+    || python3 "\${GATEWAY_HOME}/../vibed-infra/lib/generate.py" .packageconfig.yaml --profile gateway --mode app \\
+    -o "\${GATEWAY_HOME}/apps/${PRODUCT_NAME}/sites.conf"
+fi
+# shellcheck source=/dev/null
+source "\${SCRIPT_DIR}/.infra-lib/host_gateway.sh" 2>/dev/null || source "${GATEWAY_HOME}/lib/host_gateway.sh"
+vibed_reload_or_start_gateway
+EOF
+  chmod +x "$DEST/start-gateway.sh" "$DEST/update-gateway.sh"
+  # generate.py / host_gateway.sh already live in .infra-lib from bootstrap
+  cp -f "${INFRA_LIB}/host_gateway.sh" "$DEST/.infra-lib/host_gateway.sh" 2>/dev/null || true
+
+  # Ensure host network name is in product .env example path after copy
+  echo "GATEWAY_HOME=${GATEWAY_HOME}" >>"$DEST/.env.example" 2>/dev/null || true
 fi
 
 if [[ ! -f "$DEST/.env" ]]; then
@@ -219,6 +291,22 @@ if [[ ! -f "$DEST/.env" ]]; then
   echo "created: $DEST/.env"
 else
   echo "exists: $DEST/.env"
+fi
+
+# Align product DOCKER_NETWORK with host edge when gateway/host exists
+if vibed_host_gateway_ready 2>/dev/null; then
+  HG="$(vibed_gateway_home)"
+  if [[ -f "$HG/.env" ]]; then
+    HOST_NET="$(grep -E '^DOCKER_NETWORK=' "$HG/.env" | head -1 | cut -d= -f2- || true)"
+    if [[ -n "$HOST_NET" && -f "$DEST/.env" ]]; then
+      if grep -q '^DOCKER_NETWORK=' "$DEST/.env"; then
+        sed -i "s|^DOCKER_NETWORK=.*|DOCKER_NETWORK=${HOST_NET}|" "$DEST/.env"
+      else
+        echo "DOCKER_NETWORK=${HOST_NET}" >>"$DEST/.env"
+      fi
+      echo "joined host edge network: $HOST_NET"
+    fi
+  fi
 fi
 
 cat >"$DEST/.infra-profile" <<EOF
@@ -229,12 +317,26 @@ UPDATE_SCRIPT=${UPDATE_SCRIPT}
 EOF
 
 chmod +x "$DEST/${START_SCRIPT}" 2>/dev/null || true
+
+# Ensure update-agent + persist-logs on first install (idempotent)
+if [[ -f "${PACKAGER_RAW}/templates/update-agent/install-agent.sh" ]]; then
+  PACKAGER_RAW="$PACKAGER_RAW" VIBED_HOME="${VIBED_HOME:-}" bash "${PACKAGER_RAW}/templates/update-agent/install-agent.sh" || true
+fi
+if [[ -f "${PACKAGER_RAW}/templates/persist-logs/install-persist-logs.sh" ]]; then
+  PACKAGER_RAW="$PACKAGER_RAW" VIBED_HOME="${VIBED_HOME:-}" bash "${PACKAGER_RAW}/templates/persist-logs/install-persist-logs.sh" || true
+fi
+
 INFRA_PROFILE="$PROFILE" ./install-auto-update.sh || true
 
 if [[ "$ROLE" == "gateway" ]]; then
   # shellcheck source=/dev/null
   source "$DEST/lib-env.sh"
   load_dotenv "$DEST/.env"
+  HG="$(vibed_gateway_home)"
+  # Prefer host certs
+  if [[ -f "$HG/.env" ]]; then
+    load_dotenv "$HG/.env"
+  fi
   CERT_DIR="$(python3 -c "
 import sys
 sys.path.insert(0, '${INFRA_LIB}')
@@ -243,13 +345,37 @@ from pathlib import Path
 p = get_profile(load_packageconfig(Path('${PC_LOCAL}')), '${PROFILE}')
 sites = p.get('sites') or []
 if not sites:
-    print('/etc/letsencrypt/live/example.com')
+    print('${HG}/certs')
 else:
     s = sites[0]
-    print(s.get('tlsCertDir') or ('/etc/letsencrypt/live/' + s['host']))
+    print(s.get('tlsCertDir') or ('${HG}/certs'))
 ")"
   TLS_FULLCHAIN="${TLS_FULLCHAIN:-${CERT_DIR}/fullchain.pem}"
   TLS_PRIVKEY="${TLS_PRIVKEY:-${CERT_DIR}/privkey.pem}"
+  # Prefer writable host certs when packaged tlsCertDir is not writable (e.g. /etc/letsencrypt)
+  if [[ ! -f "$TLS_FULLCHAIN" ]]; then
+    HOST_CERT_DIR="${HG}/certs"
+    mkdir -p "$HOST_CERT_DIR" 2>/dev/null || true
+    if [[ -x "${PRODUCT_RAW}/gen-dev-certs.sh" ]]; then
+      APP_HOST="$(python3 -c "
+import sys
+sys.path.insert(0, '${INFRA_LIB}')
+from load_config import load_packageconfig, get_profile
+from pathlib import Path
+p = get_profile(load_packageconfig(Path('${PC_LOCAL}')), '${PROFILE}')
+sites = p.get('sites') or []
+print(sites[0]['host'] if sites else 'localhost')
+")"
+      if APP_HOST="$APP_HOST" bash "${PRODUCT_RAW}/gen-dev-certs.sh" "$HOST_CERT_DIR" 2>/dev/null; then
+        TLS_FULLCHAIN="${HOST_CERT_DIR}/fullchain.pem"
+        TLS_PRIVKEY="${HOST_CERT_DIR}/privkey.pem"
+      fi
+    fi
+  fi
+  if [[ -f "$HG/.env" ]]; then
+    sed -i "s|^TLS_FULLCHAIN=.*|TLS_FULLCHAIN=${TLS_FULLCHAIN}|" "$HG/.env" 2>/dev/null || true
+    sed -i "s|^TLS_PRIVKEY=.*|TLS_PRIVKEY=${TLS_PRIVKEY}|" "$HG/.env" 2>/dev/null || true
+  fi
   mapfile -t DOMAIN_ARR < <(python3 -c "
 import sys
 sys.path.insert(0, '${INFRA_LIB}')
@@ -261,8 +387,14 @@ for s in p.get('sites') or []:
     for a in s.get('aliases') or []:
         print(a)
 ")
-  infra_tls_offer_interactive "$TLS_FULLCHAIN" "$TLS_PRIVKEY" "${DOMAIN_ARR[@]}"
+  infra_tls_offer_interactive "$TLS_FULLCHAIN" "$TLS_PRIVKEY" "${DOMAIN_ARR[@]}" || true
 fi
 
 echo ""
-echo "Install complete. Start: cd $DEST && ./${START_SCRIPT}"
+if [[ "$ROLE" == "gateway" ]]; then
+  echo "Install complete. Host gateway: $(vibed_gateway_home)"
+  echo "App sites: $(vibed_gateway_home)/apps/${PRODUCT_NAME:-app}/sites.conf"
+  echo "Start: cd $DEST && ./start-gateway.sh"
+else
+  echo "Install complete. Start: cd $DEST && ./${START_SCRIPT}"
+fi

@@ -88,7 +88,23 @@ build_cron_minutes() {
 }
 CRON_MINUTES="$(build_cron_minutes "${CRON_OFFSET:-0}" "${INTERVAL_MIN:-30}")"
 CRON_SCHED="${CRON_MINUTES} * * * *"
-CRON_CMD="cd ${SCRIPT_DIR} && /bin/bash ${SCRIPT_DIR}/${UPDATE_SCRIPT} >/dev/null 2>&1"
+# Prefer shared update-agent queue when available; else direct update script.
+AGENT_ENQUEUE=""
+for cand in \
+  "${VIBED_HOME:-}/update-agent/enqueue.sh" \
+  "${HOME:-}/services/vibed-infra/update-agent/enqueue.sh" \
+  "/var/lib/vibed/update-agent/enqueue.sh"
+do
+  if [[ -n "$cand" && -x "$cand" ]]; then
+    AGENT_ENQUEUE="$cand"
+    break
+  fi
+done
+if [[ -n "$AGENT_ENQUEUE" ]]; then
+  CRON_CMD="cd ${SCRIPT_DIR} && UPDATE_REASON=cron /bin/bash ${AGENT_ENQUEUE} ${SCRIPT_DIR} >/dev/null 2>&1"
+else
+  CRON_CMD="cd ${SCRIPT_DIR} && /bin/bash ${SCRIPT_DIR}/${UPDATE_SCRIPT} >/dev/null 2>&1"
+fi
 dir_slug="$(basename "$SCRIPT_DIR" | tr -c 'A-Za-z0-9._-' '_')"
 CRON_D_FILE="/etc/cron.d/infra-${ROLE}-${dir_slug}"
 

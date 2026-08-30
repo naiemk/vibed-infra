@@ -2,7 +2,7 @@
 networks:
   edge:
     external: true
-    name: ${DOCKER_NETWORK:-hello-vps-edge}
+    name: ${DOCKER_NETWORK:-vps-edge}
 
 services:
   worker:

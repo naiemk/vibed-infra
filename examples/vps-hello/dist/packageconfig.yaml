@@ -3,7 +3,7 @@ version: 1
 rawBase: /workspaces/vibed-infra/examples/vps-hello/dist
 packagerRaw: /workspaces/vibed-infra
 network:
-  edge: hello-vps-edge
+  edge: vps-edge
 images:
   backend: "hello-vps-api:local"
   ui: "hello-vps-ui:local"
@@ -55,7 +55,7 @@ profiles:
           roleEnv: WORKER_ROLE=heartbeat
   gateway:
     role: gateway
-    mode: standalone
+    mode: host-extension
     templates:
       envExample: .env.gateway.example
     startScript: start-gateway.sh
@@ -73,7 +73,7 @@ profiles:
         ui: hello-vps-ui
         uiPort: 80
         healthPath: /api/health
-        tlsCertDir: /etc/letsencrypt/live/hello.example.com
+        tlsCertDir: ./certs
         aliases:
         - www.hello.example.com
         createPath: /api/notes

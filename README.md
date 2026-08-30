@@ -1,100 +1,75 @@
 # vibed-infra
 
-Product-agnostic VPS deployment packager: **`package.sh`** turns four YAML configs into a committed **`dist/`** tree operators wget on the box — install scripts, generic start/update helpers, env examples, and gateway nginx.
+Product-agnostic VPS packager: **`package.sh`** builds committed **`dist/`** for wget install. One **host gateway** serves many apps; a **serial update agent** pulls images without overload; **persist-logs** enable event-sourced recovery; **`dist/DNS-SKILL.md`** configures DNS via an AU browser agent.
 
 Published on npm as **`vibed-infra`**.
 
 ## Product maintainer flow
 
-Author **`templates/`** in your product repo:
-
 | File | Purpose |
 |------|---------|
-| `vibed-infra-config.yml` | Product name, template refs, edge network, gateway `sites[]`, auto-update |
-| `api-config.yaml` | API image, port, opaque `config:` |
-| `ui-config.yaml` | UI image, port |
-| `nodes-config.yaml` | Worker image, opaque `config:` |
-
-Then package and commit **`dist/`**:
+| `vibed-infra-config.yml` | Name, templates, `network.edge` (default `vps-edge`), `gateway.sites[]`, auto-update |
+| `api-config.yaml` / `ui-config.yaml` / `nodes-config.yaml` | Images + opaque config |
 
 ```bash
-./package.sh                  # exec vibed-infra packager → writes dist/
+./package.sh
 git add dist && git commit && git push
+# Copy dist/DNS-SKILL.md into AU agent browser extension; give it the VPS IP
 ```
 
-Resolve the packager from npm:
+## Operator flow (VPS)
 
 ```bash
-node -e "console.log(require('path').dirname(require.resolve('vibed-infra/package.json')))"
-```
-
-Example product: [`examples/vps-hello`](examples/vps-hello) (`app/`, `build-images.sh`, four YAMLs, committed `dist/`).
-
-## Operator flow (wget on VPS)
-
-```bash
-wget -qO- https://raw.githubusercontent.com/ORG/REPO/main/dist/install-api.sh | bash
-wget -qO- .../dist/install-nodes.sh | bash
+wget -qO- .../dist/install-api.sh | bash
 wget -qO- .../dist/install-ui.sh | bash
-wget -qO- .../dist/install-gateway.sh | bash
-# edit each install dir .env, then ./start-*.sh
+wget -qO- .../dist/install-nodes.sh | bash
+wget -qO- .../dist/install-gateway.sh | bash   # bootstraps ~/services/gateway once + apps/{name}/
 ```
 
 | Profile | Role |
 |---------|------|
-| `api` | Backend on shared edge network |
-| `ui` | UI container (separate install) |
-| `nodes` | Worker compose on edge network |
-| `gateway` | HTTPS nginx only (API + UI must already run) |
+| `api` / `ui` / `nodes` | Join shared `vps-edge` |
+| `gateway` | Host nginx + this app’s `sites.conf` under `apps/` |
+
+Multi-app: further products’ `install-gateway.sh` only add `apps/{other}/sites.conf` and reload — no second 80/443 bind.
+
+## Machine services (installed once)
+
+| Path | Purpose |
+|------|---------|
+| `~/services/gateway` | Host nginx (`GATEWAY_HOME`) |
+| `~/services/vibed-infra/update-agent` | Serial pull queue + optional GHCR webhook |
+| `~/services/vibed-infra/persist-logs` | Per-app WALs + optional R2/S3 ship |
+
+Auto-update cron **enqueues** work; the agent processes one job at a time. Updates prune dangling images (`DOCKER_AUTO_PRUNE=1`).
 
 ## Layout
 
 | Path | Purpose |
 |------|---------|
-| `package.sh` / `lib/package.py` | Build product `dist/` from four YAMLs + generic templates |
-| `install.sh` | Single entrypoint (`INFRA_PROFILE` or `--profile`) |
-| `install-auto-update.sh` | Cron from profile flags |
-| `lib/` | fetch, env, tls, prompt, generate, product_config |
-| `templates/generic/` | Generic start/update/env/certs/gateway |
-| `schema/packageconfig.md` | Four-file product schema + compiled packageconfig |
-| `examples/vps-hello/` | Full example with dist e2e tests |
-| `skills/` | Cursor skills |
-| `github/workflows/` | Reusable GHCR build workflow |
+| `package.sh` / `lib/package.py` | Build `dist/` |
+| `templates/host-gateway/` | Shared gateway skeleton |
+| `templates/update-agent/` | Queue agent + webhook |
+| `templates/persist-logs/` | Shipper install |
+| `lib/persistlog/` | Python append / seal / replay |
+| `skills/` | system-gateway, infra-update-agent, persist-logs, dns-configure |
 
 ## Environment
 
 | Variable | Meaning |
 |----------|---------|
-| `PACKAGER_RAW` | Base URL or local path to this package root |
-| `PACKAGECONFIG_URL` | Product `packageconfig.yaml` or `dist/` URL (URL or path) |
-| `PRODUCT_RAW` | Product `dist/` base (templates + install scripts) |
-| `INFRA_PROFILE` | `api`, `ui`, `nodes`, or `gateway` |
-| `INSTALL_DIR` | Target directory (default `.`) |
-
-Auto-update cron runs profile `update-*.sh`. Each update **prunes dangling Docker images** by default (`DOCKER_AUTO_PRUNE=1`). Set `DOCKER_PRUNE_UNUSED=1` to also drop unused tagged images older than `DOCKER_PRUNE_UNTIL` (default `72h`).
+| `GATEWAY_HOME` | Host gateway dir (default `~/services/gateway`) |
+| `VIBED_HOME` | Machine vibed root (default `~/services/vibed-infra`) |
+| `PERSIST_LOG_DIR` | Per-service event log dir |
+| `DOCKER_AUTO_PRUNE` | Prune dangling images after update (default on) |
 
 ## Tests
 
 ```bash
-npm test                        # package + dry-run all dist/install-*.sh
-npm run test:dist               # build images + e2e api, ui, nodes (sequential)
-./examples/vps-hello/test-dist.sh --profile api   # single profile
+npm test
+npm run test:dist
 ```
 
-CI: `validate` job then parallel `dist-e2e` matrix (`api`, `ui`, `nodes`).
+## Publishing
 
-## Publishing (npm)
-
-Every **merge to `main`** runs [Publish npm](.github/workflows/publish.yml):
-
-1. Bumps **minor** (`0.1.0` → `0.2.0`)
-2. Commits `chore: release vibed-infra v…`, tags `v…`, pushes
-3. Runs `npm publish` (needs repo secret `NPM_TOKEN`)
-
-**Major versions** — set `version` in `package.json` yourself (e.g. `1.0.0`) and include **`[major]`** in the commit message. That publishes the pinned version with **no** automatic minor bump.
-
-Set repository secret **`NPM_TOKEN`** before the first merge to `main`.
-
-Ordinary PRs only run CI (`npm test` + dist e2e); they do **not** publish.
-
-Runbook: [`examples/vps-hello/README.md`](examples/vps-hello/README.md).
+Merge to `main` runs Publish npm (minor bump). Set `NPM_TOKEN`. Ordinary PRs run CI only.

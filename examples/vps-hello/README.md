@@ -1,53 +1,37 @@
 # Example: VPS stack with vibed-infra
 
-Minimal product source — **`package.sh`** writes committed **`dist/`** for wget VPS install.
-
-## Source (you edit)
+## Source
 
 ```
-app/                          # Dockerfiles + app code
-build-images.sh               # docker build :local tags
-package.sh                    # proxy to vibed-infra packager
-templates/
-  api-config.yaml             # image, port, opaque config
-  ui-config.yaml
-  nodes-config.yaml
-  vibed-infra-config.yml      # network, gateway sites, auto-update
+app/  build-images.sh  package.sh
+templates/   # four YAML configs (network.edge: vps-edge)
+dist/        # generated — includes DNS-SKILL.md
 ```
 
-## Maintainer flow
+## Maintainer
 
 ```bash
-./build-images.sh             # optional locally
-./package.sh                  # writes dist/
-git add dist && git commit && git push
+./package.sh && git add dist && git commit && git push
+# Paste dist/DNS-SKILL.md into AU agent; give it the VPS IP
 ```
 
-## Operator flow (VPS)
+## Operator
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/ORG/REPO/main/dist/install-api.sh | bash
+wget -qO- .../dist/install-api.sh | bash
 wget -qO- .../dist/install-ui.sh | bash
 wget -qO- .../dist/install-nodes.sh | bash
 wget -qO- .../dist/install-gateway.sh | bash
-# edit each .env, then ./start-*.sh in each install dir
+# Host gateway: ~/services/gateway  +  apps/hello-vps/sites.conf
 ```
 
-| Profile | Starts |
+| Profile | Notes |
 |---------|--------|
-| `api` | Notes API on edge network |
-| `ui` | Static UI container |
-| `nodes` | Heartbeat worker → API |
-| `gateway` | HTTPS nginx (UI + API must already run) |
-
-Lab TLS: `./gen-dev-certs.sh` in the gateway install dir (copied from dist).
+| `gateway` | Bootstraps shared host once; later apps only add `apps/{name}/` |
+| `api` | Mounts `PERSIST_LOG_DIR` when set |
 
 ## Tests
 
 ```bash
-./test-dist.sh --profile api
-./test-dist.sh --profile ui
-./test-dist.sh --profile nodes
+./test-dist.sh --profile api|ui|nodes
 ```
-
-CI runs the same three profiles in parallel after `npm test`.

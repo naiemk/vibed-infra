@@ -7,7 +7,7 @@ templates:
   nodes: nodes-config.yaml
 
 network:
-  edge: hello-vps-edge
+  edge: vps-edge
 
 autoUpdate:
   api:
@@ -35,4 +35,5 @@ gateway:
         - www.hello.example.com
       healthPath: /api/health
       createPath: /api/notes
-      tlsCertDir: /etc/letsencrypt/live/hello.example.com
+      tlsCertDir: ./certs
+

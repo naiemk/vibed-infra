@@ -40,6 +40,13 @@ if docker inspect "$NAME" >/dev/null 2>&1; then
 fi
 
 echo "Starting $NAME (host port $HOST_PORT, network $NETWORK) ..."
+PERSIST_DIR="${PERSIST_LOG_DIR:-}"
+PERSIST_ARGS=()
+if [[ -n "$PERSIST_DIR" ]]; then
+  mkdir -p "$PERSIST_DIR"
+  PERSIST_ABS="$(cd "$PERSIST_DIR" && pwd)"
+  PERSIST_ARGS=(-e "PERSIST_LOG_DIR=/persist-logs" -v "${PERSIST_ABS}:/persist-logs")
+fi
 # shellcheck disable=SC2046
 docker run -d \
   --name "$NAME" \
@@ -52,6 +59,7 @@ docker run -d \
   -e API_TOKEN="${API_TOKEN:-}" \
   -v "${DATA_ABS}:/data" \
   -v "${CONFIG_ABS}:/config/app.yaml:ro" \
+  "${PERSIST_ARGS[@]}" \
   "$IMAGE" >/dev/null
 
 echo "API: http://localhost:${HOST_PORT}/api/health"
