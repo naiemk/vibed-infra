@@ -58,9 +58,9 @@ cd ~/services/gateway
 - **Production:** certbot (webroot if gateway is up, else standalone). On failure, fix DNS then re-run `setup-tls.sh`.
 - **Lab/CI:** `TLS_MODE=lab` → multi-SAN self-signed under `./certs/`.
 
-## Webhook path
+## Webhook path (immediate docker pull)
 
-Host `00-default.conf` (HTTP) and each app `sites.conf` (HTTPS) proxy `/_vibed/hooks/` to the update-agent on `host.docker.internal:19200`. Image builds notify this path automatically — see infra-update-agent skill.
+Host `00-default.conf` (HTTP) and each app `sites.conf` (HTTPS) proxy `/_vibed/hooks/` to the update-agent on `host.docker.internal:19200`. After a GHCR `:main` push, CI POSTs a GitHub Actions OIDC JWT to `/_vibed/hooks/ghcr` — see infra-update-agent. Do not expose port 19200 on the public firewall.
 
 ## Pitfalls
 

@@ -39,7 +39,7 @@ Compiled `packageconfig.yaml` also includes `webhook.url` / `fallbackUrl` (from 
 | Path | Purpose |
 |------|---------|
 | `install-*.sh` | wget entrypoints |
-| `notify-vps-pull.py` | Called by GHCR workflow after push; uses compiled `webhook` |
+| `notify-vps-pull.py` | GHCR workflow: mint OIDC JWT and POST webhook URLs from `webhook:` |
 | `DNS-SKILL.md` | Paste into AU browser agent; includes domains + `publicIp` when set |
 | `packageconfig.yaml` | compiled config |
 | `start-*.sh` / `update-*.sh` | lifecycle |
@@ -47,11 +47,15 @@ Compiled `packageconfig.yaml` also includes `webhook.url` / `fallbackUrl` (from 
 
 Gateway install writes `$GATEWAY_HOME/apps/{name}/sites.conf` (host-extension mode).
 
-## Auto-update
+## Auto-update and docker pull
 
-When `*_AUTO_UPDATE=1`, cron **enqueues** into the machine update-agent (serial pulls). Fallback: direct `update-*.sh` if agent missing. After update: dangling image prune (`DOCKER_AUTO_PRUNE`).
+Install registers each role with the machine **update-agent**. Pulls are serial and digest-gated (`update-*.sh`).
 
-Immediate pulls: install registers the app. The reusable docker-build workflow mints a GitHub Actions OIDC JWT and POSTs to `https://{host}/_vibed/hooks/ghcr` (fallback `http://{publicIp}/_vibed/hooks/ghcr`) after pushing `:main`. The VPS verifies GitHub’s signature (`id-token: write` on the caller job). Local curl may use the compiled `webhook.token`.
+- **Immediate:** reusable GHCR workflow on the default branch mints a GitHub Actions OIDC JWT and POSTs `https://{host}/_vibed/hooks/ghcr` (fallback `http://{publicIp}/_vibed/hooks/ghcr`). Caller needs `id-token: write`. See [`skills/infra-update-agent/SKILL.md`](../skills/infra-update-agent/SKILL.md).
+- **Cron:** when `*_AUTO_UPDATE=1`, cron enqueues on an interval (backup if notify is missed). Fallback: direct `update-*.sh` if the agent is missing.
+- After update: dangling image prune (`DOCKER_AUTO_PRUNE`).
+
+`webhook.token` in compiled packageconfig is only for local curl; CI does not need `VIBED_WEBHOOK_SECRET`.
 
 ## Persist logs
 
@@ -63,6 +67,7 @@ Immediate pulls: install registers the app. The reusable docker-build workflow m
 |----------|---------|
 | `GATEWAY_HOME` | Host gateway (default `~/services/gateway`) |
 | `VIBED_HOME` | `~/services/vibed-infra` |
+| `VIBED_UPDATE_AGENT` | Override update-agent dir (default `$VIBED_HOME/update-agent`) |
 | `GATEWAY_PUBLIC_IP` / `TLS_EMAIL` / `TLS_MODE` | Host TLS (`setup-tls.sh`) |
 | `PACKAGER_RAW` / `PRODUCT_RAW` / `PACKAGECONFIG_URL` | as before |
 | `INFRA_PROFILE` | `api`, `ui`, `nodes`, `gateway` |

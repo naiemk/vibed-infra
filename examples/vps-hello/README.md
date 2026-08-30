@@ -13,6 +13,7 @@ dist/        # generated — includes DNS-SKILL.md
 ```bash
 ./package.sh && git add dist && git commit && git push
 # Paste dist/DNS-SKILL.md into AU agent (publicIp baked when set in config)
+# GHCR workflow: id-token: write so the VPS pulls :main immediately
 ```
 
 ## Operator
@@ -23,6 +24,7 @@ wget -qO- .../dist/install-ui.sh | bash
 wget -qO- .../dist/install-nodes.sh | bash
 wget -qO- .../dist/install-gateway.sh | bash
 # Host gateway: ~/services/gateway + apps/hello-vps/sites.conf + setup-tls.sh
+# Install registers images with the update-agent; GHCR :main push pulls immediately (OIDC).
 ```
 
 | Profile | Notes |
