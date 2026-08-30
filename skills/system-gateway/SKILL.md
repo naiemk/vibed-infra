@@ -55,7 +55,7 @@ cd ~/services/gateway
 ./setup-tls.sh --force  # re-issue after host or IP change
 ```
 
-- **Production:** `setup-tls.sh` issues Let’s Encrypt via docker `certbot/certbot` by default (config under `$GATEWAY_HOME/letsencrypt`, PEMs copied to `$GATEWAY_HOME/certs/`). No sudo required when Docker is available. Host certbot + sudo still preferred when present (same `--config-dir` under gateway home). Webroot if gateway is up, else standalone. On failure, fix DNS then re-run `setup-tls.sh`.
+- **Production:** `setup-tls.sh` issues Let’s Encrypt via docker `certbot/certbot` by default (config under `$GATEWAY_HOME/letsencrypt`, PEMs installed into `$GATEWAY_HOME/certs/` — direct `cp` when readable, else alpine container copy+chown for root-owned `live/`). No sudo required when Docker is available. Host certbot + sudo still preferred when present (same `--config-dir` under gateway home). Webroot if gateway is up, else standalone. On failure, fix DNS then re-run `setup-tls.sh`.
 - **Lab/CI:** `TLS_MODE=lab` → multi-SAN self-signed under `./certs/`.
 
 ## Webhook path (immediate docker pull)

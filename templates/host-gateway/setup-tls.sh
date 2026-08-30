@@ -254,13 +254,33 @@ EOF
     return 0
   fi
 
-  local live="${LE_HOME}/live/${primary}"
-  if [[ ! -f "${live}/fullchain.pem" || ! -f "${live}/privkey.pem" ]]; then
-    echo "certbot succeeded but ${live} PEMs missing" >&2
-    return 1
-  fi
-  cp -L "${live}/fullchain.pem" "${CERT_DIR}/fullchain.pem"
-  cp -L "${live}/privkey.pem" "${CERT_DIR}/privkey.pem"
+  # Copy PEMs into CERT_DIR without sudo. Docker certbot leaves root-owned live/
+  # (mode 700); host path may be readable after sudo chown above.
+  install_pems_to_certs() {
+    local primary="$1"
+    local live="${LE_HOME}/live/${primary}"
+    mkdir -p "$CERT_DIR"
+    if [[ -r "${live}/fullchain.pem" && -r "${live}/privkey.pem" ]]; then
+      cp -L "${live}/fullchain.pem" "${CERT_DIR}/fullchain.pem"
+      cp -L "${live}/privkey.pem" "${CERT_DIR}/privkey.pem"
+    elif command -v docker >/dev/null 2>&1; then
+      # certbot container wrote root-owned live/; copy+chown via alpine
+      docker run --rm \
+        -v "${LE_HOME}:/etc/letsencrypt:ro" \
+        -v "${CERT_DIR}:/out" \
+        "${CERTBOT_HELPER_IMAGE:-alpine:3.20}" \
+        sh -c "cp -L /etc/letsencrypt/live/${primary}/fullchain.pem /out/fullchain.pem && cp -L /etc/letsencrypt/live/${primary}/privkey.pem /out/privkey.pem && chown $(id -u):$(id -g) /out/fullchain.pem /out/privkey.pem && chmod 644 /out/fullchain.pem && chmod 600 /out/privkey.pem"
+    else
+      echo "Cannot read ${live} PEMs (root-owned?) and docker unavailable to copy them" >&2
+      return 1
+    fi
+    if [[ ! -f "${CERT_DIR}/fullchain.pem" || ! -f "${CERT_DIR}/privkey.pem" ]]; then
+      echo "Failed to install PEMs into ${CERT_DIR}" >&2
+      return 1
+    fi
+  }
+
+  install_pems_to_certs "$primary"
   chmod 644 "${CERT_DIR}/fullchain.pem"
   chmod 600 "${CERT_DIR}/privkey.pem"
   patch_env_key TLS_FULLCHAIN "${CERT_DIR}/fullchain.pem"
