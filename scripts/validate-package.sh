@@ -173,6 +173,7 @@ try:
     with urllib.request.urlopen(req, timeout=5) as resp:
         body = json.loads(resp.read().decode())
     assert body.get("ok") is True and body.get("enqueued") == 1, body
+    assert list((td / "queue").glob("*.json")), "enqueue must write under VIBED_UPDATE_AGENT"
     bad = urllib.request.Request(
         f"http://127.0.0.1:{port}/_vibed/hooks/ghcr",
         data=b'{"package":"hello-vps-api","tag":"main"}',
@@ -271,6 +272,7 @@ try:
     with urllib.request.urlopen(req, timeout=5) as resp:
         body = json.loads(resp.read().decode())
     assert body.get("ok") is True and body.get("enqueued") == 1, body
+    assert list((td2 / "queue").glob("*.json")), "OIDC enqueue must write under VIBED_UPDATE_AGENT"
     # owner mismatch → authenticated but no enqueue
     other = sign_jwt_rs256(
         {"alg": "RS256", "typ": "JWT", "kid": "test1"},
@@ -304,6 +306,15 @@ vibed_enqueue_update "a" "api" "/tmp/x" "img:1" "test"
 n="$(find "$(vibed_agent_home)/queue" -name '*.json' | wc -l)"
 [[ "$n" -eq 1 ]] || { echo "expected 1 queued job, got $n" >&2; exit 1; }
 rm -rf "$VIBED_HOME"
+unset VIBED_HOME
+export VIBED_UPDATE_AGENT="${TMPDIR:-/tmp}/vibed-agent-override-$$"
+# shellcheck source=/dev/null
+source lib/update_queue.sh
+[[ "$(vibed_agent_home)" == "$VIBED_UPDATE_AGENT" ]] || { echo "VIBED_UPDATE_AGENT should win" >&2; exit 1; }
+vibed_enqueue_update "b" "ui" "/tmp/y" "img:2" "test"
+[[ -n "$(find "$VIBED_UPDATE_AGENT/queue" -name '*.json')" ]] || { echo "missing override queue file" >&2; exit 1; }
+rm -rf "$VIBED_UPDATE_AGENT"
+unset VIBED_UPDATE_AGENT
 
 for f in \
   examples/vps-hello/package.sh \

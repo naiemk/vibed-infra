@@ -171,6 +171,7 @@ vibed_enqueue_update "{meta["app"]}" "{meta["role"]}" "{meta["installDir"]}" "{i
 '''
                 env2 = os.environ.copy()
                 env2["UPDATE_REASON"] = "webhook"
+                env2["VIBED_UPDATE_AGENT"] = str(HOME)
                 subprocess.run(["bash", "-c", bash], check=False, env=env2)
                 enqueued += 1
 
