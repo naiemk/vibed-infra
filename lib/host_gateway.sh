@@ -38,13 +38,6 @@ vibed_bootstrap_host_gateway() {
   home="$(vibed_gateway_home)"
   mkdir -p "$home/gateway/conf.d" "$home/apps" "$home/certs" "$home/certbot-www"
 
-  if [[ -f "${home}/.vibed-host-gateway" ]]; then
-    echo "host gateway already present: $home"
-    return 0
-  fi
-
-  echo "bootstrapping host gateway at $home"
-
   _hg_fetch() {
     local rel="$1" dest="$2"
     mkdir -p "$(dirname "$dest")"
@@ -59,22 +52,31 @@ vibed_bootstrap_host_gateway() {
     fi
   }
 
+  # Always refresh setup-tls (idempotent re-install / multi-app)
+  _hg_fetch "templates/host-gateway/setup-tls.sh" "$home/setup-tls.sh"
+  chmod +x "$home/setup-tls.sh"
+
+  if [[ -f "${home}/.vibed-host-gateway" ]]; then
+    echo "host gateway already present: $home"
+    return 0
+  fi
+
+  echo "bootstrapping host gateway at $home"
+
   _hg_fetch "templates/host-gateway/gateway/nginx.conf" "$home/gateway/nginx.conf"
   _hg_fetch "templates/host-gateway/gateway/conf.d/00-default.conf" "$home/gateway/conf.d/00-default.conf"
   _hg_fetch "templates/host-gateway/.env.example" "$home/.env.example"
   _hg_fetch "templates/host-gateway/start-gateway.sh" "$home/start-gateway.sh"
   _hg_fetch "templates/host-gateway/reload-gateway.sh" "$home/reload-gateway.sh"
   _hg_fetch "templates/host-gateway/update-gateway.sh" "$home/update-gateway.sh"
+  _hg_fetch "lib/env.sh" "$home/lib-env.sh"
   chmod +x "$home/start-gateway.sh" "$home/reload-gateway.sh" "$home/update-gateway.sh"
 
   if [[ ! -f "$home/.env" ]]; then
     cp "$home/.env.example" "$home/.env"
   fi
-  if [[ -f "${packager}/lib/env.sh" ]] || [[ "$packager" =~ ^/ ]]; then
-    if [[ "$packager" =~ ^/ ]]; then
-      cp -f "${packager}/lib/env.sh" "$home/lib-env.sh"
-    fi
-  fi
+  mkdir -p "$home/lib"
+  _hg_fetch "lib/host_gateway.sh" "$home/lib/host_gateway.sh"
 
   echo "1" >"${home}/.vibed-host-gateway"
   echo "bootstrapped host gateway: $home"

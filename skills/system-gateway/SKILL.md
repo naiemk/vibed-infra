@@ -12,6 +12,8 @@ description: >-
 ```
 ~/services/gateway/                 # GATEWAY_HOME — once per machine
   .vibed-host-gateway               # marker
+  setup-tls.sh                      # issue/refresh certs (LE or lab)
+  .vibed-tls-state                  # domains + publicIp fingerprint
   start-gateway.sh / reload-gateway.sh
   gateway/nginx.conf                # includes conf.d + apps/*/sites.conf
   gateway/conf.d/00-default.conf    # ACME + HTTP→HTTPS + /_vibed/hooks/
@@ -21,17 +23,19 @@ description: >-
 ```
 
 - Shared Docker network: **`vps-edge`** (from host `.env`).
-- Only the **host** binds 80/443. Product `install-gateway.sh` bootstraps host if missing, then installs/updates that product’s `apps/{name}/sites.conf` and reloads.
+- Only the **host** binds 80/443. Product `install-gateway.sh` bootstraps host if missing, then installs/updates that product’s `apps/{name}/sites.conf`, runs **`setup-tls.sh`**, and can reload.
 - UI and API are separate installs; they must join `DOCKER_NETWORK=vps-edge`.
 
 ## Operator flow
 
+1. Set DNS from **`dist/DNS-SKILL.md`** (domains + `gateway.publicIp`).
+2. Install gateway (sets up TLS when possible):
+
 ```bash
-# first (or any) product — creates host + app extension
 wget -qO- .../dist/install-gateway.sh | bash
 cd ~/…/gateway-install && ./start-gateway.sh
 
-# second product on same VPS — only adds apps/other/sites.conf
+# second product on same VPS — adds apps/other/sites.conf and re-runs setup-tls (new SANs)
 wget -qO- .../other/dist/install-gateway.sh | bash
 ```
 
@@ -39,14 +43,27 @@ Override location: `GATEWAY_HOME=/path/to/gateway`.
 
 ## TLS
 
-Lab: `gen-dev-certs.sh` into `$GATEWAY_HOME/certs`. Production: certbot; set `TLS_FULLCHAIN` / `TLS_PRIVKEY` on the **host** `.env`, then `./reload-gateway.sh`.
+Config (product `vibed-infra-config.yml`):
+
+- `gateway.publicIp` — baked into DNS-SKILL
+- `gateway.tlsEmail` — Let’s Encrypt account email → `TLS_MODE=letsencrypt` on setup
+- Host `.env`: `TLS_EMAIL`, `GATEWAY_PUBLIC_IP`, `TLS_MODE=lab|letsencrypt`
+
+```bash
+cd ~/services/gateway
+./setup-tls.sh          # no-op if certs already cover current domains/IP
+./setup-tls.sh --force  # re-issue after host or IP change
+```
+
+- **Production:** certbot (webroot if gateway is up, else standalone). On failure, fix DNS then re-run `setup-tls.sh`.
+- **Lab/CI:** `TLS_MODE=lab` → multi-SAN self-signed under `./certs/`.
 
 ## Webhook path
 
-Host `00-default.conf` proxies `/_vibed/hooks/` to the update-agent on `host.docker.internal:19200` (see infra-update-agent skill).
+Host `00-default.conf` (HTTP) and each app `sites.conf` (HTTPS) proxy `/_vibed/hooks/` to the update-agent on `host.docker.internal:19200`. Image builds notify this path automatically — see infra-update-agent skill.
 
 ## Pitfalls
 
 - Do not run a second standalone nginx on 80/443.
 - Container names in `sites.conf` must match running API/UI names on `vps-edge`.
-- After cert renewal, reload the host gateway so nginx picks up new files.
+- After cert renewal or `setup-tls.sh`, reload happens automatically when the gateway container is already running.

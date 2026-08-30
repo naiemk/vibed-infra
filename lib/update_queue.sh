@@ -3,6 +3,10 @@
 # shellcheck shell=bash
 
 vibed_agent_home() {
+  if [[ -n "${VIBED_UPDATE_AGENT:-}" ]]; then
+    echo "${VIBED_UPDATE_AGENT}"
+    return 0
+  fi
   if [[ -n "${VIBED_HOME:-}" ]]; then
     echo "${VIBED_HOME}/update-agent"
     return 0

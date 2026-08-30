@@ -4,12 +4,19 @@
 #
 #   jobs:
 #     build-api:
-#       uses: ./infra/github/workflows/docker-build-reusable.yml
+#       uses: naiemk/vibed-infra/.github/workflows/docker-build-reusable.yml@main
 #       with:
 #         dockerfile: deploy/Dockerfile.api
 #         image: ghcr.io/${{ github.repository_owner }}/my-api
 #         context: .
+#       permissions:
+#         contents: read
+#         packages: write
+#         id-token: write
 #       secrets: inherit
+#
+# After push to the default branch, notifies the VPS using GitHub Actions OIDC
+# (audience = webhook URL). No GitHub Packages webhook and no extra secrets.
 
 name: Reusable docker build (single image)
 
@@ -26,14 +33,26 @@ on:
         required: false
         type: string
         default: .
+      notify:
+        required: false
+        type: boolean
+        default: true
+    secrets:
+      VIBED_WEBHOOK_SECRET:
+        required: false
 
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 jobs:
   build-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -59,3 +78,15 @@ jobs:
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
+      - name: Notify VPS to pull
+        if: inputs.notify && github.event.repository.default_branch == github.ref_name
+        continue-on-error: true
+        env:
+          VIBED_WEBHOOK_SECRET: ${{ secrets.VIBED_WEBHOOK_SECRET }}
+        run: |
+          script=dist/notify-vps-pull.py
+          if [[ ! -f "$script" ]]; then
+            echo "notify-vps: dist/notify-vps-pull.py missing — re-package and commit dist/"
+            exit 0
+          fi
+          python3 "$script" --image "${{ inputs.image }}" --tag main

@@ -3,8 +3,9 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 PACKAGER_RAW="${PACKAGER_RAW:-https://raw.githubusercontent.com/naiemk/vibed-infra/main}"
-export PACKAGECONFIG_URL="${PACKAGECONFIG_URL:-$SCRIPT_DIR/packageconfig.yaml}"
+export PACKAGER_RAW
 export PRODUCT_RAW="${PRODUCT_RAW:-$SCRIPT_DIR}"
+export PACKAGECONFIG_URL="${PACKAGECONFIG_URL:-$SCRIPT_DIR/packageconfig.yaml}"
 export INFRA_PROFILE=ui
 export INSTALL_DIR="${INSTALL_DIR:-.}"
 if [[ "$PACKAGER_RAW" =~ ^/ ]]; then

@@ -31,6 +31,8 @@
   },
   "scripts": {
     "test": "bash scripts/validate-package.sh",
-    "test:dist": "bash examples/vps-hello/test-dist.sh --profile api && bash examples/vps-hello/test-dist.sh --profile ui && bash examples/vps-hello/test-dist.sh --profile nodes"
+    "test:oidc": "bash scripts/e2e-oidc-webhook.sh",
+    "test:dist": "bash examples/vps-hello/test-dist.sh --profile api && bash examples/vps-hello/test-dist.sh --profile ui && bash examples/vps-hello/test-dist.sh --profile nodes",
+    "test:e2e-multi": "bash scripts/e2e-multi-app.sh"
   }
 }

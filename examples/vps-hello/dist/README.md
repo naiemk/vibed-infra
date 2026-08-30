@@ -16,4 +16,4 @@ Gateway install bootstraps `~/services/gateway` once, then drops `apps/{product}
 
 ## DNS (AU agent)
 
-Copy [`DNS-SKILL.md`](DNS-SKILL.md) into an AU agent browser extension and give it your VPS IP.
+Copy [`DNS-SKILL.md`](DNS-SKILL.md) into an AU agent browser extension. Domains and `gateway.publicIp` are baked in when configured; confirm the IP with the operator.

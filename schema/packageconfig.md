@@ -19,6 +19,8 @@ autoUpdate:
   nodes: { enabled: false, intervalMin: 30, offset: 10 }
   gateway: { enabled: false, intervalMin: 20, offset: 20 }
 gateway:
+  publicIp: 203.0.113.10    # VPS IPv4 — baked into dist/DNS-SKILL.md
+  tlsEmail: ops@example.com # Let’s Encrypt account email (host setup-tls)
   nginxImage: nginx:alpine
   sites:
     - host: app.example.com
@@ -30,12 +32,15 @@ gateway:
 
 Defaults: containers `{name}-api` / `{name}-ui` / `{name}-worker`; host gateway container `vps-gateway`.
 
+Compiled `packageconfig.yaml` also includes `webhook.url` / `fallbackUrl` (from `publicIp` + first `sites[].host`). After a default-branch image push, the reusable GHCR workflow mints a GitHub Actions OIDC JWT and POSTs to those URLs — no GitHub webhook UI and no extra secrets. `webhook.token` remains for local curl.
+
 ## dist/ (generated)
 
 | Path | Purpose |
 |------|---------|
 | `install-*.sh` | wget entrypoints |
-| `DNS-SKILL.md` | Paste into AU browser agent; user supplies VPS IP |
+| `notify-vps-pull.py` | Called by GHCR workflow after push; uses compiled `webhook` |
+| `DNS-SKILL.md` | Paste into AU browser agent; includes domains + `publicIp` when set |
 | `packageconfig.yaml` | compiled config |
 | `start-*.sh` / `update-*.sh` | lifecycle |
 | `.env.*.example` | includes `PERSIST_LOG_DIR`, prune flags |
@@ -45,6 +50,8 @@ Gateway install writes `$GATEWAY_HOME/apps/{name}/sites.conf` (host-extension mo
 ## Auto-update
 
 When `*_AUTO_UPDATE=1`, cron **enqueues** into the machine update-agent (serial pulls). Fallback: direct `update-*.sh` if agent missing. After update: dangling image prune (`DOCKER_AUTO_PRUNE`).
+
+Immediate pulls: install registers the app. The reusable docker-build workflow mints a GitHub Actions OIDC JWT and POSTs to `https://{host}/_vibed/hooks/ghcr` (fallback `http://{publicIp}/_vibed/hooks/ghcr`) after pushing `:main`. The VPS verifies GitHub’s signature (`id-token: write` on the caller job). Local curl may use the compiled `webhook.token`.
 
 ## Persist logs
 
@@ -56,5 +63,6 @@ When `*_AUTO_UPDATE=1`, cron **enqueues** into the machine update-agent (serial 
 |----------|---------|
 | `GATEWAY_HOME` | Host gateway (default `~/services/gateway`) |
 | `VIBED_HOME` | `~/services/vibed-infra` |
+| `GATEWAY_PUBLIC_IP` / `TLS_EMAIL` / `TLS_MODE` | Host TLS (`setup-tls.sh`) |
 | `PACKAGER_RAW` / `PRODUCT_RAW` / `PACKAGECONFIG_URL` | as before |
 | `INFRA_PROFILE` | `api`, `ui`, `nodes`, `gateway` |

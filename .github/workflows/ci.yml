@@ -26,3 +26,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash examples/vps-hello/test-dist.sh --profile ${{ matrix.profile }}
+
+  oidc-webhook-e2e:
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Mint GitHub OIDC JWT and POST local webhook
+        env:
+          REQUIRE_OIDC_E2E: "1"
+        run: bash scripts/e2e-oidc-webhook.sh
+
+  multi-app-e2e:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/e2e-multi-app.sh

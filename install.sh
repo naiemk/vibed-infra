@@ -57,7 +57,7 @@ LOCAL_PACKAGER=0
 if [[ "$PACKAGER_RAW" =~ ^/ ]] && [[ -d "$PACKAGER_RAW/lib" ]]; then
   LOCAL_PACKAGER=1
 fi
-for lib in fetch.sh env.sh prompt.sh tls.sh load_config.py generate.py host_gateway.sh; do
+for lib in fetch.sh env.sh prompt.sh tls.sh load_config.py generate.py host_gateway.sh update_queue.sh webhook.py github_oidc.py; do
   if [[ "$LOCAL_PACKAGER" == "1" ]]; then
     cp -f "${PACKAGER_RAW}/lib/${lib}" "${INFRA_LIB}/${lib}"
   else
@@ -319,8 +319,83 @@ EOF
 chmod +x "$DEST/${START_SCRIPT}" 2>/dev/null || true
 
 # Ensure update-agent + persist-logs on first install (idempotent)
-if [[ -f "${PACKAGER_RAW}/templates/update-agent/install-agent.sh" ]]; then
-  PACKAGER_RAW="$PACKAGER_RAW" VIBED_HOME="${VIBED_HOME:-}" bash "${PACKAGER_RAW}/templates/update-agent/install-agent.sh" || true
+_install_update_agent() {
+  local agent_packager="$PACKAGER_RAW"
+  if [[ "$LOCAL_PACKAGER" != "1" ]]; then
+    agent_packager="${DEST}/.infra-packager"
+    mkdir -p "$agent_packager/lib" "$agent_packager/templates/update-agent"
+    cp -f "${INFRA_LIB}/update_queue.sh" "$agent_packager/lib/update_queue.sh" 2>/dev/null || true
+    cp -f "${INFRA_LIB}/webhook.py" "$agent_packager/lib/webhook.py" 2>/dev/null || true
+    cp -f "${INFRA_LIB}/github_oidc.py" "$agent_packager/lib/github_oidc.py" 2>/dev/null || true
+    for f in install-agent.sh agent.sh enqueue.sh webhook_server.py; do
+      _fetch "${PACKAGER_RAW}/templates/update-agent/${f}" "$agent_packager/templates/update-agent/${f}" || true
+    done
+  fi
+  if [[ -f "${agent_packager}/templates/update-agent/install-agent.sh" ]]; then
+    chmod +x "$agent_packager/templates/update-agent/"*.sh 2>/dev/null || true
+    PACKAGER_RAW="$agent_packager" VIBED_HOME="${VIBED_HOME:-}" bash "${agent_packager}/templates/update-agent/install-agent.sh" || true
+  fi
+}
+_install_update_agent
+
+# Register this install so GHCR notify can enqueue without waiting for cron
+PRODUCT_NAME="${PRODUCT_NAME:-$(
+  python3 -c "
+import sys
+sys.path.insert(0, '${INFRA_LIB}')
+from load_config import load_packageconfig
+from pathlib import Path
+print(load_packageconfig(Path('${PC_LOCAL}')).get('name') or 'app')
+"
+)}"
+_REG_ROLE="$ROLE"
+case "$ROLE" in
+  backend) _REG_ROLE=api ;;
+  workers) _REG_ROLE=nodes ;;
+esac
+# shellcheck source=/dev/null
+if [[ -f "${INFRA_LIB}/update_queue.sh" ]]; then
+  source "${INFRA_LIB}/update_queue.sh"
+elif [[ -f "${PACKAGER_RAW}/lib/update_queue.sh" ]]; then
+  source "${PACKAGER_RAW}/lib/update_queue.sh"
+fi
+if declare -F vibed_register_app >/dev/null 2>&1; then
+  _env_val() {
+    local key="$1"
+    [[ -f "$DEST/.env" ]] || return 0
+    grep -E "^${key}=" "$DEST/.env" 2>/dev/null | head -1 | cut -d= -f2-
+  }
+  _REG_IMAGE=""
+  case "$_REG_ROLE" in
+    api) _REG_IMAGE="$(_env_val BACKEND_IMAGE)" ;;
+    ui) _REG_IMAGE="$(_env_val UI_IMAGE)" ;;
+    nodes) _REG_IMAGE="$(_env_val WORKER_IMAGE)" ;;
+    gateway) _REG_IMAGE="$(_env_val NGINX_IMAGE)" ;;
+  esac
+  vibed_register_app "$PRODUCT_NAME" "$_REG_ROLE" "$DEST" "$_REG_IMAGE" || true
+  _HOOK_TOKEN="$(
+    python3 -c "
+import sys
+sys.path.insert(0, '${INFRA_LIB}')
+from pathlib import Path
+from load_config import load_packageconfig
+try:
+    from webhook import webhook_from_packageconfig
+except ImportError:
+    webhook_from_packageconfig = None
+c = load_packageconfig(Path('${PC_LOCAL}'))
+if webhook_from_packageconfig:
+    print(webhook_from_packageconfig(c).get('token') or '')
+else:
+    print((c.get('webhook') or {}).get('token') or '')
+"
+  )"
+  if [[ -n "${_HOOK_TOKEN}" ]]; then
+    AGENT_HOME="$(vibed_agent_home 2>/dev/null || echo "${VIBED_HOME:-$HOME/services/vibed-infra}/update-agent")"
+    mkdir -p "${AGENT_HOME}/tokens"
+    printf '%s\n' "$_HOOK_TOKEN" >"${AGENT_HOME}/tokens/${PRODUCT_NAME}"
+    echo "webhook token registered for ${PRODUCT_NAME}"
+  fi
 fi
 if [[ -f "${PACKAGER_RAW}/templates/persist-logs/install-persist-logs.sh" ]]; then
   PACKAGER_RAW="$PACKAGER_RAW" VIBED_HOME="${VIBED_HOME:-}" bash "${PACKAGER_RAW}/templates/persist-logs/install-persist-logs.sh" || true
@@ -333,67 +408,90 @@ if [[ "$ROLE" == "gateway" ]]; then
   source "$DEST/lib-env.sh"
   load_dotenv "$DEST/.env"
   HG="$(vibed_gateway_home)"
-  # Prefer host certs
+  mkdir -p "$HG/certs" "$HG/certbot-www"
+
+  # Propagate public IP / TLS email from packageconfig into host + product .env
+  GW_PUBLIC_IP="$(
+    python3 -c "
+import sys
+sys.path.insert(0, '${INFRA_LIB}')
+from load_config import load_packageconfig, get_profile
+from pathlib import Path
+c = load_packageconfig(Path('${PC_LOCAL}'))
+p = get_profile(c, '${PROFILE}')
+print(p.get('publicIp') or '')
+"
+  )"
+  GW_TLS_EMAIL="$(
+    python3 -c "
+import sys
+sys.path.insert(0, '${INFRA_LIB}')
+from load_config import load_packageconfig, get_profile
+from pathlib import Path
+c = load_packageconfig(Path('${PC_LOCAL}'))
+p = get_profile(c, '${PROFILE}')
+print(p.get('tlsEmail') or '')
+"
+  )"
+  _patch_env() {
+    local file="$1" key="$2" val="$3"
+    [[ -n "$val" ]] || return 0
+    [[ -f "$file" ]] || return 0
+    if grep -q "^${key}=" "$file" 2>/dev/null; then
+      sed -i "s|^${key}=.*|${key}=${val}|" "$file"
+    else
+      echo "${key}=${val}" >>"$file"
+    fi
+  }
   if [[ -f "$HG/.env" ]]; then
-    load_dotenv "$HG/.env"
-  fi
-  CERT_DIR="$(python3 -c "
-import sys
-sys.path.insert(0, '${INFRA_LIB}')
-from load_config import load_packageconfig, get_profile
-from pathlib import Path
-p = get_profile(load_packageconfig(Path('${PC_LOCAL}')), '${PROFILE}')
-sites = p.get('sites') or []
-if not sites:
-    print('${HG}/certs')
-else:
-    s = sites[0]
-    print(s.get('tlsCertDir') or ('${HG}/certs'))
-")"
-  TLS_FULLCHAIN="${TLS_FULLCHAIN:-${CERT_DIR}/fullchain.pem}"
-  TLS_PRIVKEY="${TLS_PRIVKEY:-${CERT_DIR}/privkey.pem}"
-  # Prefer writable host certs when packaged tlsCertDir is not writable (e.g. /etc/letsencrypt)
-  if [[ ! -f "$TLS_FULLCHAIN" ]]; then
-    HOST_CERT_DIR="${HG}/certs"
-    mkdir -p "$HOST_CERT_DIR" 2>/dev/null || true
-    if [[ -x "${PRODUCT_RAW}/gen-dev-certs.sh" ]]; then
-      APP_HOST="$(python3 -c "
-import sys
-sys.path.insert(0, '${INFRA_LIB}')
-from load_config import load_packageconfig, get_profile
-from pathlib import Path
-p = get_profile(load_packageconfig(Path('${PC_LOCAL}')), '${PROFILE}')
-sites = p.get('sites') or []
-print(sites[0]['host'] if sites else 'localhost')
-")"
-      if APP_HOST="$APP_HOST" bash "${PRODUCT_RAW}/gen-dev-certs.sh" "$HOST_CERT_DIR" 2>/dev/null; then
-        TLS_FULLCHAIN="${HOST_CERT_DIR}/fullchain.pem"
-        TLS_PRIVKEY="${HOST_CERT_DIR}/privkey.pem"
-      fi
+    _patch_env "$HG/.env" GATEWAY_PUBLIC_IP "${GATEWAY_PUBLIC_IP:-$GW_PUBLIC_IP}"
+    _patch_env "$HG/.env" TLS_EMAIL "${TLS_EMAIL:-$GW_TLS_EMAIL}"
+    # Product/install env can force lab (CI) without wiping host LE later
+    if [[ -n "${TLS_MODE:-}" ]]; then
+      _patch_env "$HG/.env" TLS_MODE "$TLS_MODE"
     fi
   fi
-  if [[ -f "$HG/.env" ]]; then
-    sed -i "s|^TLS_FULLCHAIN=.*|TLS_FULLCHAIN=${TLS_FULLCHAIN}|" "$HG/.env" 2>/dev/null || true
-    sed -i "s|^TLS_PRIVKEY=.*|TLS_PRIVKEY=${TLS_PRIVKEY}|" "$HG/.env" 2>/dev/null || true
-  fi
-  mapfile -t DOMAIN_ARR < <(python3 -c "
+  _patch_env "$DEST/.env" GATEWAY_PUBLIC_IP "${GATEWAY_PUBLIC_IP:-$GW_PUBLIC_IP}"
+  _patch_env "$DEST/.env" TLS_EMAIL "${TLS_EMAIL:-$GW_TLS_EMAIL}"
+
+  # Collect domains for TLS_DOMAINS fallback if apps conf not parseable yet
+  TLS_DOMAINS="$(
+    python3 -c "
 import sys
 sys.path.insert(0, '${INFRA_LIB}')
 from load_config import load_packageconfig, get_profile
 from pathlib import Path
 p = get_profile(load_packageconfig(Path('${PC_LOCAL}')), '${PROFILE}')
+names=[]
 for s in p.get('sites') or []:
-    print(s['host'])
-    for a in s.get('aliases') or []:
-        print(a)
-")
-  infra_tls_offer_interactive "$TLS_FULLCHAIN" "$TLS_PRIVKEY" "${DOMAIN_ARR[@]}" || true
+    names.append(s['host'])
+    names.extend(s.get('aliases') or [])
+print(' '.join(names))
+"
+  )"
+  export TLS_DOMAINS
+  export GATEWAY_PUBLIC_IP="${GATEWAY_PUBLIC_IP:-$GW_PUBLIC_IP}"
+  export TLS_EMAIL="${TLS_EMAIL:-$GW_TLS_EMAIL}"
+
+  if [[ -x "$HG/setup-tls.sh" ]]; then
+    echo "Running host gateway TLS setup ..."
+    (cd "$HG" && GATEWAY_HOME="$HG" TLS_DOMAINS="$TLS_DOMAINS" \
+      GATEWAY_PUBLIC_IP="${GATEWAY_PUBLIC_IP:-}" \
+      TLS_EMAIL="${TLS_EMAIL:-}" \
+      TLS_MODE="${TLS_MODE:-}" \
+      ./setup-tls.sh) || {
+      echo "TLS setup did not complete — fix DNS then: cd $HG && ./setup-tls.sh --force" >&2
+    }
+  else
+    echo "warning: $HG/setup-tls.sh missing — re-run gateway install to bootstrap" >&2
+  fi
 fi
 
 echo ""
 if [[ "$ROLE" == "gateway" ]]; then
   echo "Install complete. Host gateway: $(vibed_gateway_home)"
   echo "App sites: $(vibed_gateway_home)/apps/${PRODUCT_NAME:-app}/sites.conf"
+  echo "TLS: cd $(vibed_gateway_home) && ./setup-tls.sh   # re-run if host/IP/domains change (--force)"
   echo "Start: cd $DEST && ./start-gateway.sh"
 else
   echo "Install complete. Start: cd $DEST && ./${START_SCRIPT}"
