@@ -26,3 +26,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash examples/vps-hello/test-dist.sh --profile ${{ matrix.profile }}
+
+  multi-app-e2e:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/e2e-multi-app.sh

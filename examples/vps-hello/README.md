@@ -34,4 +34,6 @@ wget -qO- .../dist/install-gateway.sh | bash
 
 ```bash
 ./test-dist.sh --profile api|ui|nodes
+# From repo root — dual-app host gateway via localhost wget:
+npm run test:e2e-multi
 ```

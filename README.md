@@ -68,6 +68,7 @@ Auto-update cron **enqueues** work; the agent processes one job at a time. Updat
 ```bash
 npm test
 npm run test:dist
+npm run test:e2e-multi   # two apps, localhost wget|bash, shared host gateway
 ```
 
 ## Publishing

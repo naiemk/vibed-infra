@@ -65,16 +65,14 @@ vibed_bootstrap_host_gateway() {
   _hg_fetch "templates/host-gateway/start-gateway.sh" "$home/start-gateway.sh"
   _hg_fetch "templates/host-gateway/reload-gateway.sh" "$home/reload-gateway.sh"
   _hg_fetch "templates/host-gateway/update-gateway.sh" "$home/update-gateway.sh"
+  _hg_fetch "lib/env.sh" "$home/lib-env.sh"
   chmod +x "$home/start-gateway.sh" "$home/reload-gateway.sh" "$home/update-gateway.sh"
 
   if [[ ! -f "$home/.env" ]]; then
     cp "$home/.env.example" "$home/.env"
   fi
-  if [[ -f "${packager}/lib/env.sh" ]] || [[ "$packager" =~ ^/ ]]; then
-    if [[ "$packager" =~ ^/ ]]; then
-      cp -f "${packager}/lib/env.sh" "$home/lib-env.sh"
-    fi
-  fi
+  mkdir -p "$home/lib"
+  _hg_fetch "lib/host_gateway.sh" "$home/lib/host_gateway.sh"
 
   echo "1" >"${home}/.vibed-host-gateway"
   echo "bootstrapped host gateway: $home"
