@@ -52,7 +52,8 @@ def compile_packageconfig(
     infra = product["infra"]
     comps = product["components"]
     name = _slug(str(infra.get("name") or "app"))
-    network = (infra.get("network") or {}).get("edge") or f"{name}-edge"
+    # Shared host edge by default so multiple products join one gateway.
+    network = (infra.get("network") or {}).get("edge") or "vps-edge"
     api = comps["api"]
     ui = comps["ui"]
     nodes = comps["nodes"]
@@ -142,7 +143,7 @@ def compile_packageconfig(
             },
             "gateway": {
                 "role": "gateway",
-                "mode": "standalone",
+                "mode": "host-extension",
                 "templates": {"envExample": ".env.gateway.example"},
                 "startScript": "start-gateway.sh",
                 "updateScript": "update-gateway.sh",
@@ -159,7 +160,8 @@ def compile_packageconfig(
             "apiContainer": api_name,
             "uiContainer": ui_name,
             "workerContainer": worker_name,
-            "gatewayContainer": f"{name}-gateway",
+            "gatewayContainer": "vps-gateway",
+            "productName": name,
             "network": network,
             "apiPort": api.get("port") or 8080,
             "uiPort": ui.get("port") or 80,

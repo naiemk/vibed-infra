@@ -1,6 +1,6 @@
 # Product config schema (four files)
 
-Product repos ship **templates only**. Run `package.sh` to generate committed `dist/` for VPS wget install.
+Product repos ship **templates only**. Run `package.sh` to generate committed `dist/`.
 
 ## templates/vibed-infra-config.yml
 
@@ -12,75 +12,49 @@ templates:
   ui: ui-config.yaml
   nodes: nodes-config.yaml
 network:
-  edge: my-product-edge
+  edge: vps-edge          # shared host edge (default if omitted)
 autoUpdate:
   api: { enabled: false, intervalMin: 30, offset: 0 }
   ui: { enabled: false, intervalMin: 20, offset: 15 }
   nodes: { enabled: false, intervalMin: 30, offset: 10 }
   gateway: { enabled: false, intervalMin: 20, offset: 20 }
 gateway:
-  nginxImage: nginx:alpine   # optional
+  nginxImage: nginx:alpine
   sites:
     - host: app.example.com
       aliases: [www.app.example.com]
       healthPath: /api/health
-      createPath: /api/items   # optional rate-limited POST
+      createPath: /api/items
       tlsCertDir: /etc/letsencrypt/live/app.example.com
 ```
 
-Smart defaults: containers `{name}-api`, `{name}-ui`, `{name}-worker`, `{name}-gateway`.
+Defaults: containers `{name}-api` / `{name}-ui` / `{name}-worker`; host gateway container `vps-gateway`.
 
-## templates/api-config.yaml
-
-```yaml
-image: ghcr.io/org/my-api:main
-port: 8080
-config:          # opaque — written to dist/api-app.yaml
-  title: My App
-```
-
-## templates/ui-config.yaml
-
-```yaml
-image: ghcr.io/org/my-ui:main
-port: 80
-```
-
-## templates/nodes-config.yaml
-
-```yaml
-image: ghcr.io/org/my-worker:main
-config:          # opaque — written to dist/nodes-workers.yaml
-  intervalSec: 60
-```
-
-## dist/ (generated — commit and push)
+## dist/ (generated)
 
 | Path | Purpose |
 |------|---------|
-| `install-api.sh` / `install-ui.sh` / `install-nodes.sh` / `install-gateway.sh` | wget entrypoints |
-| `packageconfig.yaml` | compiled for vibed-infra `install.sh` |
-| `start-*.sh` / `update-*.sh` | generic lifecycle (from packager) |
-| `gen-dev-certs.sh` | lab TLS helper |
-| `.env.*.example` | generated env templates |
+| `install-*.sh` | wget entrypoints |
+| `DNS-SKILL.md` | Paste into AU browser agent; user supplies VPS IP |
+| `packageconfig.yaml` | compiled config |
+| `start-*.sh` / `update-*.sh` | lifecycle |
+| `.env.*.example` | includes `PERSIST_LOG_DIR`, prune flags |
 
-## Environment (install time)
+Gateway install writes `$GATEWAY_HOME/apps/{name}/sites.conf` (host-extension mode).
+
+## Auto-update
+
+When `*_AUTO_UPDATE=1`, cron **enqueues** into the machine update-agent (serial pulls). Fallback: direct `update-*.sh` if agent missing. After update: dangling image prune (`DOCKER_AUTO_PRUNE`).
+
+## Persist logs
+
+`PERSIST_LOG_DIR` per role. See [`skills/persist-logs/SKILL.md`](../skills/persist-logs/SKILL.md).
+
+## Environment (install)
 
 | Variable | Meaning |
 |----------|---------|
-| `PACKAGER_RAW` | vibed-infra root (URL or path) |
-| `PRODUCT_RAW` | dist/ URL or path |
-| `PACKAGECONFIG_URL` | defaults to `dist/packageconfig.yaml` |
-| `INFRA_PROFILE` | `api`, `ui`, `nodes`, or `gateway` |
-
-### Auto-update + image prune
-
-When `*_AUTO_UPDATE=1`, cron runs the profile `update-*.sh`. After each run it **prunes dangling Docker images** (old digests left when `:main` is retagged) so disk does not fill up.
-
-| Variable | Default | Meaning |
-|----------|---------|---------|
-| `DOCKER_AUTO_PRUNE` | `1` | Prune dangling images after auto-update |
-| `DOCKER_PRUNE_UNUSED` | `0` | Also prune unused tagged images older than `DOCKER_PRUNE_UNTIL` |
-| `DOCKER_PRUNE_UNTIL` | `72h` | Age filter for unused prune (`docker image prune -af --filter until=…`) |
-
-Legacy `packageconfig.yaml`-only products still work; new products use the four-file layout + `package.sh`.
+| `GATEWAY_HOME` | Host gateway (default `~/services/gateway`) |
+| `VIBED_HOME` | `~/services/vibed-infra` |
+| `PACKAGER_RAW` / `PRODUCT_RAW` / `PACKAGECONFIG_URL` | as before |
+| `INFRA_PROFILE` | `api`, `ui`, `nodes`, `gateway` |

@@ -1,49 +1,52 @@
 ---
 name: system-gateway
 description: >-
-  Configure a system-wide HTTPS gateway on one VPS for multiple products/domains.
-  Use when several infra-packaged projects share one host, edge network, and Let's Encrypt.
+  Configure a shared host HTTPS gateway with per-app nginx extensions so multiple
+  vibed-infra products share one VPS (ports 80/443) without hand-editing nginx.
 ---
 
-# System-wide gateway (multi-project)
+# System-wide host gateway (multi-app)
 
 ## Model
 
-- One **gateway** install dir per host: nginx on ports 80/443 (`install-gateway.sh` from product `dist/`).
-- Each product **API** + **UI** join the same Docker network (`network.edge` in `vibed-infra-config.yml`).
-- Gateway `gateway.sites[]` lists vhosts → generated `gateway/conf.d/domains.conf` on install.
+```
+~/services/gateway/                 # GATEWAY_HOME — once per machine
+  .vibed-host-gateway               # marker
+  start-gateway.sh / reload-gateway.sh
+  gateway/nginx.conf                # includes conf.d + apps/*/sites.conf
+  gateway/conf.d/00-default.conf    # ACME + HTTP→HTTPS + /_vibed/hooks/
+  apps/
+    hello-vps/sites.conf            # generated from product gateway.sites[]
+    other-app/sites.conf
+```
 
-## Steps
+- Shared Docker network: **`vps-edge`** (from host `.env`).
+- Only the **host** binds 80/443. Product `install-gateway.sh` bootstraps host if missing, then installs/updates that product’s `apps/{name}/sites.conf` and reloads.
+- UI and API are separate installs; they must join `DOCKER_NETWORK=vps-edge`.
 
-1. Pick shared network: `DOCKER_NETWORK=vps-edge` in every product `.env`.
-
-2. Install APIs/UIs with distinct container names (defaults: `{name}-api`, `{name}-ui`).
-
-3. Install gateway once:
+## Operator flow
 
 ```bash
+# first (or any) product — creates host + app extension
 wget -qO- .../dist/install-gateway.sh | bash
+cd ~/…/gateway-install && ./start-gateway.sh
+
+# second product on same VPS — only adds apps/other/sites.conf
+wget -qO- .../other/dist/install-gateway.sh | bash
 ```
 
-4. Ensure `gateway.sites[]` `backend` / `ui` match running container names (re-run `./package.sh` if you rename containers).
+Override location: `GATEWAY_HOME=/path/to/gateway`.
 
-5. **TLS** — lab: `./gen-dev-certs.sh` from `dist/`, set paths in gateway `.env`. Production:
+## TLS
 
-```bash
-sudo certbot certonly --standalone -d app.example.com
-```
+Lab: `gen-dev-certs.sh` into `$GATEWAY_HOME/certs`. Production: certbot; set `TLS_FULLCHAIN` / `TLS_PRIVKEY` on the **host** `.env`, then `./reload-gateway.sh`.
 
-Set `TLS_FULLCHAIN` / `TLS_PRIVKEY` in gateway `.env`, then `./start-gateway.sh` (reloads certs into the gateway volume).
+## Webhook path
 
-6. **Auto-update** — stagger cron: API :00, UI :15, workers :10, gateway :20 (infra defaults). Update scripts prune dangling images afterward (`DOCKER_AUTO_PRUNE=1`).
-
-## Dual-domain on one host
-
-List multiple entries under `gateway.sites[]` in `vibed-infra-config.yml`. See [`examples/vps-hello/templates/vibed-infra-config.yml`](../../examples/vps-hello/templates/vibed-infra-config.yml).
+Host `00-default.conf` proxies `/_vibed/hooks/` to the update-agent on `host.docker.internal:19200` (see infra-update-agent skill).
 
 ## Pitfalls
 
-- API must listen on a container name resolvable by nginx (`hello-vps-api:8080`, not `localhost`).
-- Do not bind host port 443 twice — only gateway publishes 443.
-- Gateway does not start UI; install UI separately before gateway.
-- Re-run `./start-gateway.sh` after cert renewal so nginx picks up new cert files.
+- Do not run a second standalone nginx on 80/443.
+- Container names in `sites.conf` must match running API/UI names on `vps-edge`.
+- After cert renewal, reload the host gateway so nginx picks up new files.
