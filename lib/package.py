@@ -45,10 +45,17 @@ DOCKER_NETWORK={meta['network']}
 DOCKER_NAME={meta['apiContainer']}
 BACKEND_IMAGE={conf['images']['backend']}
 HOST_PORT={meta['apiPort']}
-DATA_DIR=./data
+# Durable data uses Docker named volume ${{DOCKER_NAME}}-data by default.
+# DATA_VOLUME=custom-data-vol
+# DATA_BIND=1
+# DATA_DIR=./data
 CONFIG_FILE=api-app.yaml
 API_MEMORY_LIMIT=256m
-PERSIST_LOG_DIR=./persist-logs
+# Persist logs: named volume ${{DOCKER_NAME}}-persist + ship sidecar (default on).
+# PERSIST_LOG_VOLUME=custom-persist-vol
+# PERSIST_LOGS=0
+# PERSIST_LOG_BIND=1
+# PERSIST_LOG_DIR=./persist-logs
 {au['flag']}=0
 {au['intervalEnv']}=30
 {au['stopTimeoutEnv']}=60
@@ -65,7 +72,6 @@ DOCKER_NETWORK={meta['network']}
 UI_NAME={meta['uiContainer']}
 UI_IMAGE={conf['images']['ui']}
 UI_MEMORY_LIMIT=32m
-PERSIST_LOG_DIR=./persist-logs
 {au['flag']}=0
 {au['intervalEnv']}=20
 {au['stopTimeoutEnv']}=30
@@ -87,7 +93,12 @@ WORKER_CONTAINER_NAME={meta['workerContainer']}
 WORKER_ROLE=heartbeat
 INTERVAL_SEC=60
 WORKER_MEMORY_LIMIT=64m
-PERSIST_LOG_DIR=./persist-logs
+# Logs + persist use named volumes by default (${{WORKER_CONTAINER_NAME}}-logs / -persist).
+# WORKER_LOG_VOLUME=
+# PERSIST_LOG_VOLUME=
+# PERSIST_LOGS=0
+# LOGS_BIND=1
+# LOGS_DIR=./logs
 {au['flag']}=0
 {au['intervalEnv']}=30
 {au['stopTimeoutEnv']}=30
@@ -186,6 +197,14 @@ networks:
     external: true
     name: ${{DOCKER_NETWORK:-{meta['network']}}}
 
+volumes:
+  worker_logs:
+    external: true
+    name: ${{WORKER_LOG_VOLUME:-{meta['workerContainer']}-logs}}
+  worker_persist:
+    external: true
+    name: ${{PERSIST_LOG_VOLUME:-{meta['workerContainer']}-persist}}
+
 services:
   worker:
     image: ${{WORKER_IMAGE:-{conf['images']['worker']}}}
@@ -193,13 +212,20 @@ services:
     restart: unless-stopped
     mem_limit: ${{WORKER_MEMORY_LIMIT:-64m}}
     env_file: .env
+    labels:
+      vibed.managed: "1"
+      vibed.role: nodes
+      vibed.logs-volume: ${{WORKER_LOG_VOLUME:-{meta['workerContainer']}-logs}}
+      vibed.persist-volume: ${{PERSIST_LOG_VOLUME:-{meta['workerContainer']}-persist}}
     environment:
       WORKER_ROLE: ${{WORKER_ROLE:-heartbeat}}
       WORKER_CONFIG: /config/workers.yaml
       API_URL: ${{API_URL:-http://{meta['apiContainer']}:{meta['apiPort']}}}
       INTERVAL_SEC: ${{INTERVAL_SEC:-60}}
+      PERSIST_LOG_DIR: /persist-logs
     volumes:
-      - ./logs:/data/logs
+      - worker_logs:/data/logs
+      - worker_persist:/persist-logs
       - ./nodes-workers.yaml:/config/workers.yaml:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -307,6 +333,11 @@ def build_dist(
         "gen-dev-certs.sh",
     ):
         _copy_generic(packager_root, out_dir, script)
+
+    sidecar = packager_root / "templates" / "persist-logs" / "start-persist-sidecar.sh"
+    if sidecar.is_file():
+        shutil.copy2(sidecar, out_dir / "start-persist-sidecar.sh")
+        _chmod_x(out_dir / "start-persist-sidecar.sh")
 
     # Bake HTTP URLs into install wrappers when packaging for wget serve; else GitHub default.
     if packager_raw_val.startswith("http://") or packager_raw_val.startswith("https://"):

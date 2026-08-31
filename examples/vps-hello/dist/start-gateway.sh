@@ -74,6 +74,8 @@ docker run -d \
   --name "$GATEWAY_NAME" \
   --restart unless-stopped \
   --network "$NETWORK" \
+  --label "vibed.managed=1" \
+  --label "vibed.role=gateway" \
   $(memory_args "$GW_MEMORY") \
   -p "${HTTP_PORT}:80" \
   -p "${HTTPS_PORT}:443" \

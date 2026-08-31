@@ -30,7 +30,7 @@ wget -qO- .../dist/install-gateway.sh | bash
 | Profile | Notes |
 |---------|--------|
 | `gateway` | Bootstraps shared host once; runs `setup-tls.sh`; later apps add `apps/{name}/` and refresh SANs |
-| `api` | Mounts `PERSIST_LOG_DIR` when set |
+| `api` | Named volume for `/data` + persist volume + ship sidecar |
 
 ## Tests
 

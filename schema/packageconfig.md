@@ -43,7 +43,7 @@ Compiled `packageconfig.yaml` also includes `webhook.url` / `fallbackUrl` (from 
 | `DNS-SKILL.md` | Paste into AU browser agent; includes domains + `publicIp` when set |
 | `packageconfig.yaml` | compiled config |
 | `start-*.sh` / `update-*.sh` | lifecycle |
-| `.env.*.example` | includes `PERSIST_LOG_DIR`, prune flags |
+| `.env.*.example` | includes named-volume / persist / prune flags |
 
 Gateway install writes `$GATEWAY_HOME/apps/{name}/sites.conf` (host-extension mode).
 
@@ -57,9 +57,13 @@ Install registers each role with the machine **update-agent**. Pulls are serial 
 
 `webhook.token` in compiled packageconfig is only for local curl; CI does not need `VIBED_WEBHOOK_SECRET`.
 
-## Persist logs
+## Persist logs + named volumes
 
-`PERSIST_LOG_DIR` per role. See [`skills/persist-logs/SKILL.md`](../skills/persist-logs/SKILL.md).
+By default API `/data`, persist WALs, and worker `/data/logs` use Docker **named volumes** (stable across digest-gated recreates). A vibed-prepared **persist sidecar** ships sealed segments using machine-wide R2/S3 config. See [`skills/persist-logs/SKILL.md`](../skills/persist-logs/SKILL.md).
+
+`.env.*.example` documents `DATA_VOLUME`, `PERSIST_LOG_VOLUME`, `PERSIST_LOGS=0`, and bind escape hatches.
+
+Inspect: `~/services/vibed-infra/monitor-vibed.sh`.
 
 ## Environment (install)
 

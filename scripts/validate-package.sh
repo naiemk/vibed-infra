@@ -11,12 +11,20 @@ test -f lib/load_config.py
 test -f lib/product_config.py
 test -f lib/package.py
 test -f templates/generic/start-api.sh
+test -f templates/persist-logs/start-persist-sidecar.sh
+test -f templates/monitor/monitor-vibed.sh
 test -f schema/packageconfig.md
 
 bash -n install.sh
 bash -n start.sh
 bash -n update.sh
 bash -n package.sh
+bash -n templates/generic/start-api.sh
+bash -n templates/generic/start-nodes.sh
+bash -n templates/persist-logs/start-persist-sidecar.sh
+bash -n templates/monitor/monitor-vibed.sh
+bash -n templates/monitor/install-monitor.sh
+bash -n lib/env.sh || true
 
 python3 -c "
 import sys
@@ -50,11 +58,26 @@ test -f examples/vps-hello/dist/install-api.sh
 test -f examples/vps-hello/dist/packageconfig.yaml
 test -f examples/vps-hello/dist/DNS-SKILL.md
 test -f examples/vps-hello/dist/notify-vps-pull.py
+test -x examples/vps-hello/dist/start-persist-sidecar.sh
+grep -q "DATA_VOLUME\|named volume\|DOCKER_NAME}-data" examples/vps-hello/dist/.env.api.example \
+  || grep -q "named volume" examples/vps-hello/dist/.env.api.example
+grep -q "worker_logs:" examples/vps-hello/dist/docker-compose.workers.yml
+grep -q "vibed.managed" examples/vps-hello/dist/docker-compose.workers.yml
 grep -q "hello.example.com" examples/vps-hello/dist/DNS-SKILL.md
 grep -q "203.0.113.10" examples/vps-hello/dist/DNS-SKILL.md
 grep -q "webhook:" examples/vps-hello/dist/packageconfig.yaml
 grep -q "_vibed/hooks/ghcr" examples/vps-hello/dist/packageconfig.yaml
 test -x examples/vps-hello/dist/start-api.sh
+grep -q "vibed_resolve_data_storage" examples/vps-hello/dist/start-api.sh
+grep -q "vibed.managed=1" examples/vps-hello/dist/start-api.sh
+# Named volumes by default — no host DATA_DIR chown on start path
+! grep -q 'chown_data_dir "\$DATA_DIR"' examples/vps-hello/dist/start-api.sh
+
+# Volume helpers present in env
+grep -q "vibed_ensure_volume" lib/env.sh
+grep -q "vibed_migrate_host_dir" lib/env.sh
+grep -q "PERSIST_SHIP_PREFIX" lib/persistlog/ship.py
+grep -q "_sigv4_put" lib/persistlog/ship.py
 
 python3 -m py_compile lib/webhook.py lib/product_config.py lib/generate.py lib/github_oidc.py \
   templates/update-agent/webhook_server.py github/notify-vps-pull.py

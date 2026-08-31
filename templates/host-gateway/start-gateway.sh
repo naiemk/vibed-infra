@@ -88,6 +88,8 @@ docker run -d \
   --restart unless-stopped \
   --network "$NETWORK" \
   --add-host=host.docker.internal:host-gateway \
+  --label "vibed.managed=1" \
+  --label "vibed.role=gateway" \
   $(memory_args "$GW_MEMORY" 2>/dev/null || true) \
   -p "${HTTP_PORT}:80" \
   -p "${HTTPS_PORT}:443" \

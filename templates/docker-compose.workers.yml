@@ -4,6 +4,14 @@ networks:
     external: true
     name: ${DOCKER_NETWORK:-app-edge}
 
+volumes:
+  worker_logs:
+    external: true
+    name: ${WORKER_LOG_VOLUME:-app-worker-logs}
+  worker_persist:
+    external: true
+    name: ${PERSIST_LOG_VOLUME:-app-worker-persist}
+
 services:
   worker:
     image: ${WORKER_IMAGE:-ghcr.io/example/worker:main}
@@ -11,12 +19,19 @@ services:
     restart: unless-stopped
     mem_limit: ${WORKER_MEMORY_LIMIT:-192m}
     env_file: .env
+    labels:
+      vibed.managed: "1"
+      vibed.role: nodes
+      vibed.logs-volume: ${WORKER_LOG_VOLUME:-app-worker-logs}
+      vibed.persist-volume: ${PERSIST_LOG_VOLUME:-app-worker-persist}
     environment:
       WORKER_CONFIG: /config/workers.yaml
       API_URL: ${API_URL:-http://app-api:8080}
       INTERVAL_SEC: ${INTERVAL_SEC:-60}
+      PERSIST_LOG_DIR: /persist-logs
     volumes:
-      - ./logs:/data/logs
+      - worker_logs:/data/logs
+      - worker_persist:/persist-logs
       - ${CONFIG_FILE:-./workers.yaml}:/config/workers.yaml:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -397,9 +397,58 @@ else:
     echo "webhook token registered for ${PRODUCT_NAME}"
   fi
 fi
-if [[ -f "${PACKAGER_RAW}/templates/persist-logs/install-persist-logs.sh" ]]; then
-  PACKAGER_RAW="$PACKAGER_RAW" VIBED_HOME="${VIBED_HOME:-}" bash "${PACKAGER_RAW}/templates/persist-logs/install-persist-logs.sh" || true
-fi
+# Machine-wide persist-logs + monitor (idempotent; works for path or http PACKAGER_RAW)
+_install_machine_helpers() {
+  local helper_packager="$PACKAGER_RAW"
+  if [[ "$LOCAL_PACKAGER" != "1" ]]; then
+    helper_packager="${DEST}/.infra-packager"
+    mkdir -p "$helper_packager/templates/persist-logs/lib" \
+      "$helper_packager/templates/monitor" \
+      "$helper_packager/lib"
+    _fetch "${PACKAGER_RAW}/templates/persist-logs/install-persist-logs.sh" \
+      "$helper_packager/templates/persist-logs/install-persist-logs.sh" || true
+    _fetch "${PACKAGER_RAW}/lib/persistlog/ship.py" \
+      "$helper_packager/lib/persistlog/ship.py" || true
+    # Minimal persistlog package for host cron / sidecar copy
+    mkdir -p "$helper_packager/lib/persistlog"
+    for f in __init__.py ship.py; do
+      _fetch "${PACKAGER_RAW}/lib/persistlog/${f}" \
+        "$helper_packager/lib/persistlog/${f}" || true
+    done
+    _fetch "${PACKAGER_RAW}/templates/monitor/install-monitor.sh" \
+      "$helper_packager/templates/monitor/install-monitor.sh" || true
+    _fetch "${PACKAGER_RAW}/templates/monitor/monitor-vibed.sh" \
+      "$helper_packager/templates/monitor/monitor-vibed.sh" || true
+    _fetch "${PACKAGER_RAW}/templates/persist-logs/start-persist-sidecar.sh" \
+      "$helper_packager/templates/persist-logs/start-persist-sidecar.sh" || true
+  fi
+  if [[ -f "${helper_packager}/templates/persist-logs/install-persist-logs.sh" ]]; then
+    chmod +x "${helper_packager}/templates/persist-logs/"*.sh 2>/dev/null || true
+    PACKAGER_RAW="$helper_packager" VIBED_HOME="${VIBED_HOME:-}" \
+      bash "${helper_packager}/templates/persist-logs/install-persist-logs.sh" || true
+  fi
+  if [[ -f "${helper_packager}/templates/monitor/install-monitor.sh" ]]; then
+    chmod +x "${helper_packager}/templates/monitor/"*.sh 2>/dev/null || true
+    PACKAGER_RAW="$helper_packager" VIBED_HOME="${VIBED_HOME:-}" \
+      bash "${helper_packager}/templates/monitor/install-monitor.sh" || true
+  fi
+  if [[ "$ROLE" == "backend" || "$ROLE" == "workers" ]]; then
+    # Prefer product dist copy when present; else packager template.
+    if [[ -f "${PRODUCT_RAW}/start-persist-sidecar.sh" ]]; then
+      cp -f "${PRODUCT_RAW}/start-persist-sidecar.sh" "$DEST/start-persist-sidecar.sh"
+    elif [[ "${PRODUCT_RAW}" =~ ^https?:// ]]; then
+      _fetch "${PRODUCT_RAW}/start-persist-sidecar.sh" "$DEST/start-persist-sidecar.sh" || true
+    elif [[ -f "${helper_packager}/templates/persist-logs/start-persist-sidecar.sh" ]]; then
+      cp -f "${helper_packager}/templates/persist-logs/start-persist-sidecar.sh" \
+        "$DEST/start-persist-sidecar.sh"
+    elif [[ -f "${PACKAGER_RAW}/templates/persist-logs/start-persist-sidecar.sh" ]]; then
+      cp -f "${PACKAGER_RAW}/templates/persist-logs/start-persist-sidecar.sh" \
+        "$DEST/start-persist-sidecar.sh"
+    fi
+    chmod +x "$DEST/start-persist-sidecar.sh" 2>/dev/null || true
+  fi
+}
+_install_machine_helpers
 
 INFRA_PROFILE="$PROFILE" ./install-auto-update.sh || true
 

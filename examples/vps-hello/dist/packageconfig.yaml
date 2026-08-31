@@ -1,7 +1,7 @@
 name: hello-vps
 version: 1
-rawBase: /tmp/vibed-infra-pr/examples/vps-hello/dist
-packagerRaw: /tmp/vibed-infra-pr
+rawBase: /workspaces/vibed-infra/examples/vps-hello/dist
+packagerRaw: /workspaces/vibed-infra
 network:
   edge: vps-edge
 images:

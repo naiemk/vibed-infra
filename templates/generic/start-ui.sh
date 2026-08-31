@@ -34,6 +34,8 @@ docker run -d \
   --name "$UI_NAME" \
   --restart unless-stopped \
   --network "$NETWORK" \
+  --label "vibed.managed=1" \
+  --label "vibed.role=ui" \
   $(memory_args "$UI_MEMORY") \
   "$UI_IMAGE" >/dev/null
 
