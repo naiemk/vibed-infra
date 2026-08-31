@@ -1,7 +1,15 @@
 # Generic backend service (optional compose path).
-# Most products use profile start script (docker create + config cp) for remote Docker compatibility.
+# Most products use profile start script (docker run + named volumes) for remote Docker compatibility.
 #
 # Usage: docker compose --env-file .env -f docker-compose.backend.yml up -d
+
+volumes:
+  api_data:
+    external: true
+    name: ${DATA_VOLUME:-${DOCKER_NAME:-backend}-data}
+  api_persist:
+    external: true
+    name: ${PERSIST_LOG_VOLUME:-${DOCKER_NAME:-backend}-persist}
 
 services:
   backend:
@@ -10,13 +18,20 @@ services:
     restart: ${RESTART:-unless-stopped}
     mem_limit: ${BACKEND_MEMORY_LIMIT:-384m}
     env_file: .env
+    labels:
+      vibed.managed: "1"
+      vibed.role: api
+      vibed.data-volume: ${DATA_VOLUME:-${DOCKER_NAME:-backend}-data}
+      vibed.persist-volume: ${PERSIST_LOG_VOLUME:-${DOCKER_NAME:-backend}-persist}
     environment:
       CONFIG_PATH: /config/server.yaml
       DB_PATH: /data/app.db
+      PERSIST_LOG_DIR: /persist-logs
     ports:
       - "${HOST_PORT:-8080}:8080"
     volumes:
-      - ${DATA_DIR:-./data}:/data
+      - api_data:/data
+      - api_persist:/persist-logs
       - ${CONFIG_FILE:-./app.yaml}:/config/server.yaml:ro
     networks:
       - edge

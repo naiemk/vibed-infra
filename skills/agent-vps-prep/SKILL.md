@@ -2,7 +2,7 @@
 name: agent-vps-prep
 description: >-
   Prepare a fresh VPS for vibed-infra installs run by an automation agent
-  (cloud_agent): SSH key, sudoers, Docker group, one-time uid-1000/ACL ownership, firewall.
+  (cloud_agent): SSH key, sudoers, Docker group, firewall; app data uses named volumes.
 ---
 
 # Prepare a VPS for vibed-infra (agent operator)
@@ -67,41 +67,42 @@ sudo chown -R cloud_agent:cloud_agent /home/cloud_agent
 
 vibed-infra defaults: `~/services/gateway`, `~/services/vibed-infra`, product dirs under `~/services/<app>/`.
 
-## 5. Bind-mount ownership (uid 1000) — configure once
+## 5. App data ownership — named volumes (default)
 
-Product images often run as `node` (uid/gid **1000**). If the operator creates `./data` / `./logs` as a *different* uid, containers hit `SQLITE_CANTOPEN` / `EACCES`. Fix this **once on the host**, not after every product install.
+API data, persist logs, and worker logs use **Docker named volumes** by default (`{container}-data`, `{container}-persist`, `{container}-logs`). They are not under `~/services`, so the operator does **not** chown them to uid 1000 and does not need a `u:1000` ACL for SQLite/WALs.
 
-### Preferred: operator is already uid 1000
+In-volume ownership comes from the **app image** on first empty mount. Digest-gated recreates remount the same volume — the database is not wiped.
 
-If §1 created `cloud_agent` as uid/gid 1000, new trees under `~/services` are already writable by the container user. Nothing else to do.
-
-### Fallback (configure once on `~/services`): default ACL
-
-When the operator is **not** uid 1000, grant uid 1000 rwx on every new file under services regardless of who creates it. Requires the `acl` package.
+### Inspect data / logs over SSH
 
 ```bash
-# as root, once after creating cloud_agent (any uid)
+~/services/vibed-infra/monitor-vibed.sh
+# non-interactive:
+~/services/vibed-infra/monitor-vibed.sh --list
+~/services/vibed-infra/monitor-vibed.sh --summary myapp-api
+```
+
+Or:
+
+```bash
+docker run --rm -v myapp-api-data:/data:ro alpine ls -la /data
+docker run --rm -v myapp-api-persist:/persist-logs:ro alpine ls -laR /persist-logs
+```
+
+### Optional: bind-mount escape hatch
+
+`DATA_BIND=1` / `PERSIST_LOG_BIND=1` / `LOGS_BIND=1` with a host path. Only then does host uid matter for those dirs. Prefer named volumes.
+
+### Install-dir scripts under `~/services`
+
+Gateway certs, product `.env`, and yaml configs still live under `~/services`. Prefer operator uid 1000 **or** a one-time ACL on `~/services` so the agent can write install trees — not for app SQLite.
+
+```bash
+# optional ACL for install scripts only (operator not uid 1000)
 apt-get install -y acl
 install -d -o cloud_agent -g cloud_agent /home/cloud_agent/services
-setfacl -m u:1000:rwx /home/cloud_agent/services
-setfacl -d -m u:1000:rwx /home/cloud_agent/services
-# also grant the operator full access via ACL defaults
-setfacl -m u:cloud_agent:rwx /home/cloud_agent/services
-setfacl -d -m u:cloud_agent:rwx /home/cloud_agent/services
+setfacl -m u:cloud_agent:rwx -d -m u:cloud_agent:rwx /home/cloud_agent/services
 ```
-
-### Recovery only
-
-If someone already created wrong-owned dirs **before** uid-1000 or ACL setup:
-
-```bash
-sudo chown -R 1000:1000 \
-  /home/cloud_agent/services/*/api/data \
-  /home/cloud_agent/services/*/api/persist-logs \
-  /home/cloud_agent/services/*/nodes/logs
-```
-
-Do not rely on per-product `chown` as ongoing ops. Prefer fixing the host model above.
 
 ## 6. Ports + DNS
 
@@ -129,6 +130,6 @@ wget -qO- https://raw.githubusercontent.com/ORG/REPO/main/deploy/.../dist/instal
 - [ ] `ssh cloud_agent@VPS` works with key only
 - [ ] `docker ps` works without sudo
 - [ ] `$HOME` owned by `cloud_agent`
-- [ ] operator uid is 1000 **OR** `~/services` has default ACL for `u:1000` (and `u:cloud_agent` if needed)
 - [ ] DNS → VPS IP
 - [ ] install-gateway + setup-tls + start-gateway
+- [ ] `~/services/vibed-infra/monitor-vibed.sh --list` shows deployments after start

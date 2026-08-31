@@ -4,6 +4,14 @@ networks:
     external: true
     name: ${DOCKER_NETWORK:-vps-edge}
 
+volumes:
+  worker_logs:
+    external: true
+    name: ${WORKER_LOG_VOLUME:-hello-vps-worker-logs}
+  worker_persist:
+    external: true
+    name: ${PERSIST_LOG_VOLUME:-hello-vps-worker-persist}
+
 services:
   worker:
     image: ${WORKER_IMAGE:-hello-vps-worker:local}
@@ -11,13 +19,20 @@ services:
     restart: unless-stopped
     mem_limit: ${WORKER_MEMORY_LIMIT:-64m}
     env_file: .env
+    labels:
+      vibed.managed: "1"
+      vibed.role: nodes
+      vibed.logs-volume: ${WORKER_LOG_VOLUME:-hello-vps-worker-logs}
+      vibed.persist-volume: ${PERSIST_LOG_VOLUME:-hello-vps-worker-persist}
     environment:
       WORKER_ROLE: ${WORKER_ROLE:-heartbeat}
       WORKER_CONFIG: /config/workers.yaml
       API_URL: ${API_URL:-http://hello-vps-api:8080}
       INTERVAL_SEC: ${INTERVAL_SEC:-60}
+      PERSIST_LOG_DIR: /persist-logs
     volumes:
-      - ./logs:/data/logs
+      - worker_logs:/data/logs
+      - worker_persist:/persist-logs
       - ./nodes-workers.yaml:/config/workers.yaml:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"

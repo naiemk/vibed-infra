@@ -20,8 +20,14 @@ export HOME="${TEST_HOME:-$BASE/home}"
 mkdir -p "$HOME" "$GATEWAY_HOME" "$VIBED_HOME"
 
 cleanup() {
-  docker rm -f "$API_NAME" "$UI_NAME" "$GW_NAME" "$WORKER_NAME" 2>/dev/null || true
+  docker rm -f "$API_NAME" "$UI_NAME" "$GW_NAME" "$WORKER_NAME" \
+    "${API_NAME}-persist-ship" "${WORKER_NAME}-persist-ship" 2>/dev/null || true
   docker network rm "$NETWORK" 2>/dev/null || true
+  docker volume rm \
+    "${API_NAME}-data" "${API_NAME}-persist" \
+    "${WORKER_NAME}-logs" "${WORKER_NAME}-persist" \
+    "${GW_NAME}-nginx-cfg" \
+    2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -78,10 +84,18 @@ case "$PROFILE" in
       DOCKER_NETWORK "$NETWORK" \
       DOCKER_NAME "$API_NAME" \
       API_TOKEN "$API_TOKEN" \
-      HOST_PORT "18080" \
-      PERSIST_LOG_DIR "$BASE/persist/api"
+      HOST_PORT "18080"
+    sed -i '/^DATA_DIR=/d;/^PERSIST_LOG_DIR=/d' "$BASE/api/.env" 2>/dev/null || true
     start_dir "$BASE/api" start-api.sh
     wait_http "http://${API_NAME}:8080/api/health" '"ok"'
+    docker volume inspect "${API_NAME}-data" >/dev/null
+    docker volume inspect "${API_NAME}-persist" >/dev/null
+    docker inspect "${API_NAME}-persist-ship" >/dev/null
+    mounts="$(docker inspect "${API_NAME}-persist-ship" --format '{{range .Mounts}}{{.Source}} {{end}}')"
+    if printf '%s' " $mounts " | grep -Fq 'docker.sock'; then
+      echo "sidecar must not mount docker.sock" >&2
+      exit 1
+    fi
     # Avoid curl -f: 201 Created is success but some clients are picky with pipelines
     body="$(curl_on_net -sS -w '\n%{http_code}' -X POST "http://${API_NAME}:8080/api/notes" \
       -H "Authorization: Bearer ${API_TOKEN}" \
@@ -89,6 +103,14 @@ case "$PROFILE" in
       --data-binary '{"author":"test","body":"from-api-job"}' || true)"
     echo "$body" | grep -q '"id"' || { echo "POST /api/notes failed: $body" >&2; exit 1; }
     wait_http "http://${API_NAME}:8080/api/notes" 'from-api-job'
+    # Survive recreate
+    start_dir "$BASE/api" start-api.sh
+    wait_http "http://${API_NAME}:8080/api/notes" 'from-api-job'
+    test -x "$VIBED_HOME/monitor-vibed.sh"
+    list_out="$("$VIBED_HOME/monitor-vibed.sh" --list)"
+    [[ "$list_out" == *"$API_NAME"* ]] || { echo "monitor --list missing $API_NAME: $list_out" >&2; exit 1; }
+    sum_out="$("$VIBED_HOME/monitor-vibed.sh" --summary "$API_NAME")"
+    [[ "$sum_out" == *"${API_NAME}-persist"* ]] || { echo "monitor --summary missing persist vol: $sum_out" >&2; exit 1; }
     echo "dist-e2e api OK"
     ;;
   nodes)

@@ -209,6 +209,7 @@ memory_args() {
 }
 
 chown_data_dir() {
+  # Legacy bind-mount helper (DATA_BIND=1). Named volumes do not use this.
   local dir="$1"
   local uid="${2:-1000}"
   mkdir -p "$dir"
@@ -221,6 +222,146 @@ chown_data_dir() {
     echo "warning: ensure $dir is writable by uid ${uid}" >&2
   fi
   chmod 755 "$dir" 2>/dev/null || true
+}
+
+# Create a durable named volume (idempotent). Never removes existing volumes.
+# Sets VIBED_VOLUME_CREATED=1 when a new volume was created, else 0.
+# Extra label key=value pairs after role/container are optional.
+vibed_ensure_volume() {
+  local name="$1"
+  local role="${2:-}"
+  local container="${3:-}"
+  shift 3 || true
+  VIBED_VOLUME_CREATED=0
+  local -a labels=(--label "vibed.managed=1")
+  [[ -n "$role" ]] && labels+=(--label "vibed.role=${role}")
+  [[ -n "$container" ]] && labels+=(--label "vibed.container=${container}")
+  local kv
+  for kv in "$@"; do
+    [[ -n "$kv" ]] && labels+=(--label "$kv")
+  done
+  if docker volume inspect "$name" >/dev/null 2>&1; then
+    return 0
+  fi
+  docker volume create "${labels[@]}" "$name" >/dev/null
+  VIBED_VOLUME_CREATED=1
+}
+
+# True if dir exists and has any entries (including hidden except . and ..).
+_vibed_host_dir_has_files() {
+  local dir="$1"
+  [[ -d "$dir" ]] || return 1
+  local f
+  for f in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+    [[ -e "$f" ]] && return 0
+  done
+  return 1
+}
+
+# One-time copy from a legacy host bind dir into a newly created empty named volume.
+# Do NOT mount the volume before the app unless migrating — any first mount can
+# initialize ownership from that helper image instead of the app image.
+vibed_migrate_host_dir() {
+  local vol="$1"
+  local host_dir="$2"
+  local newly_created="${3:-0}"
+  [[ -n "$vol" && -n "$host_dir" ]] || return 0
+  [[ "$newly_created" == "1" ]] || return 0
+  _vibed_host_dir_has_files "$host_dir" || return 0
+  local abs
+  abs="$(cd "$host_dir" && pwd)"
+  echo "Migrating $abs → volume $vol (keeping host copy) ..."
+  docker run --rm \
+    -v "${vol}:/dest" \
+    -v "${abs}:/src:ro" \
+    alpine sh -c 'cp -a /src/. /dest/' >/dev/null
+}
+
+# Resolve data storage: named volume (default) vs host bind (DATA_BIND=1 or non-default DATA_DIR).
+# Sets: VIBED_DATA_MODE=volume|bind, VIBED_DATA_VOLUME, VIBED_DATA_BIND_PATH
+vibed_resolve_data_storage() {
+  local container_name="$1"
+  local role="${2:-api}"
+  VIBED_DATA_MODE=volume
+  VIBED_DATA_VOLUME="${DATA_VOLUME:-${container_name}-data}"
+  VIBED_DATA_BIND_PATH=""
+  if env_flag_on DATA_BIND; then
+    VIBED_DATA_MODE=bind
+    VIBED_DATA_BIND_PATH="${DATA_DIR:-./data}"
+    return 0
+  fi
+  local dd="${DATA_DIR-}"
+  if [[ -n "$dd" && "$dd" != "./data" && "$dd" != "data" ]]; then
+    VIBED_DATA_MODE=bind
+    VIBED_DATA_BIND_PATH="$dd"
+    return 0
+  fi
+  vibed_ensure_volume "$VIBED_DATA_VOLUME" "$role" "$container_name" "vibed.kind=data"
+  if [[ -z "$dd" || "$dd" == "./data" || "$dd" == "data" ]]; then
+    vibed_migrate_host_dir "$VIBED_DATA_VOLUME" "./data" "${VIBED_VOLUME_CREATED:-0}"
+  fi
+}
+
+# Persist logs: default named volume + sidecar. PERSIST_LOGS=0 disables.
+# Sets: VIBED_PERSIST_MODE=volume|bind|off, VIBED_PERSIST_VOLUME, VIBED_PERSIST_BIND_PATH
+vibed_resolve_persist_storage() {
+  local container_name="$1"
+  local role="${2:-api}"
+  VIBED_PERSIST_MODE=volume
+  VIBED_PERSIST_VOLUME="${PERSIST_LOG_VOLUME:-${container_name}-persist}"
+  VIBED_PERSIST_BIND_PATH=""
+  if [[ -n "${PERSIST_LOGS+x}" ]] && ! env_flag_on PERSIST_LOGS; then
+    VIBED_PERSIST_MODE=off
+    return 0
+  fi
+  if env_flag_on PERSIST_LOG_BIND; then
+    VIBED_PERSIST_MODE=bind
+    VIBED_PERSIST_BIND_PATH="${PERSIST_LOG_DIR:-./persist-logs}"
+    return 0
+  fi
+  local pd="${PERSIST_LOG_DIR-}"
+  if [[ -n "$pd" && "$pd" != "./persist-logs" && "$pd" != "persist-logs" ]]; then
+    VIBED_PERSIST_MODE=bind
+    VIBED_PERSIST_BIND_PATH="$pd"
+    return 0
+  fi
+  vibed_ensure_volume "$VIBED_PERSIST_VOLUME" "$role" "$container_name" "vibed.kind=persist"
+  if [[ -z "$pd" || "$pd" == "./persist-logs" || "$pd" == "persist-logs" ]]; then
+    vibed_migrate_host_dir "$VIBED_PERSIST_VOLUME" "./persist-logs" "${VIBED_VOLUME_CREATED:-0}"
+  fi
+}
+
+# Worker logs volume (default) or bind.
+# Sets: VIBED_LOGS_MODE=volume|bind, VIBED_LOGS_VOLUME, VIBED_LOGS_BIND_PATH
+vibed_resolve_logs_storage() {
+  local container_name="$1"
+  local role="${2:-nodes}"
+  VIBED_LOGS_MODE=volume
+  VIBED_LOGS_VOLUME="${WORKER_LOG_VOLUME:-${container_name}-logs}"
+  VIBED_LOGS_BIND_PATH=""
+  if env_flag_on LOGS_BIND; then
+    VIBED_LOGS_MODE=bind
+    VIBED_LOGS_BIND_PATH="${LOGS_DIR:-./logs}"
+    return 0
+  fi
+  local ld="${LOGS_DIR-}"
+  if [[ -n "$ld" && "$ld" != "./logs" && "$ld" != "logs" ]]; then
+    VIBED_LOGS_MODE=bind
+    VIBED_LOGS_BIND_PATH="$ld"
+    return 0
+  fi
+  vibed_ensure_volume "$VIBED_LOGS_VOLUME" "$role" "$container_name" "vibed.kind=logs"
+  if [[ -z "$ld" || "$ld" == "./logs" || "$ld" == "logs" ]]; then
+    vibed_migrate_host_dir "$VIBED_LOGS_VOLUME" "./logs" "${VIBED_VOLUME_CREATED:-0}"
+  fi
+}
+
+vibed_home_dir() {
+  if [[ -n "${VIBED_HOME:-}" ]]; then
+    echo "${VIBED_HOME/#\~/$HOME}"
+    return 0
+  fi
+  echo "${HOME}/services/vibed-infra"
 }
 
 # Default on during auto-update. Set DOCKER_AUTO_PRUNE=0 to disable.

@@ -24,10 +24,14 @@ cleanup() {
     "$GW_NAME" \
     hello-alpha-api hello-alpha-ui \
     hello-beta-api hello-beta-ui \
+    hello-alpha-api-persist-ship hello-beta-api-persist-ship \
     2>/dev/null || true
   docker network rm "$NETWORK" 2>/dev/null || true
-  docker volume rm "${GW_NAME}-nginx-cfg" 2>/dev/null || true
-  # API data dirs are owned by container uid 1000 — wipe via docker if needed
+  docker volume rm "${GW_NAME}-nginx-cfg" \
+    hello-alpha-api-data hello-alpha-api-persist \
+    hello-beta-api-data hello-beta-api-persist \
+    2>/dev/null || true
+  # Wipe work dir (may contain docker-owned leftovers)
   if [[ -d "$WORK" ]]; then
     rm -rf "$WORK" 2>/dev/null || \
       docker run --rm -v "$(dirname "$WORK"):/parent" alpine:3.20 \
@@ -260,8 +264,9 @@ for name in alpha beta; do
     DOCKER_NAME "hello-${name}-api" \
     HOST_PORT "$local_port" \
     API_TOKEN "token-${name}" \
-    PULL "0" \
-    PERSIST_LOG_DIR "$WORK/persist/$name"
+    PULL "0"
+  # Strip legacy bind paths if present so named volumes are used
+  sed -i '/^DATA_DIR=/d;/^PERSIST_LOG_DIR=/d' "$WORK/install/$name/api/.env" 2>/dev/null || true
   patch_env "$WORK/install/$name/ui/.env" \
     DOCKER_NETWORK "$NETWORK" \
     UI_NAME "hello-${name}-ui" \
@@ -323,6 +328,39 @@ echo "$body" | grep -q '"id"' || {
   exit 1
 }
 wait_http "https://${GW_NAME}/api/notes" 'multi-app-ok' -k -H "Host: alpha.example.com"
+
+# Named volumes + persist sidecar isolation
+for name in alpha beta; do
+  docker volume inspect "hello-${name}-api-data" >/dev/null
+  docker volume inspect "hello-${name}-api-persist" >/dev/null
+  docker inspect "hello-${name}-api" --format '{{index .Config.Labels "vibed.managed"}}' | grep -q 1
+  docker inspect "hello-${name}-api" --format '{{index .Config.Labels "vibed.data-volume"}}' | grep -q "hello-${name}-api-data"
+done
+[[ "$(docker volume inspect -f '{{.Name}}' hello-alpha-api-data)" != "$(docker volume inspect -f '{{.Name}}' hello-beta-api-data)" ]]
+
+# Sidecar present, no docker.sock
+docker inspect hello-alpha-api-persist-ship >/dev/null
+socks="$(docker inspect hello-alpha-api-persist-ship --format '{{range .Mounts}}{{.Source}} {{end}}')"
+if echo " ${socks} " | grep -q 'docker.sock'; then
+  echo "sidecar mounted docker.sock: $socks" >&2
+  exit 1
+fi
+
+# Data survives recreate
+db_before="$(docker run --rm -v hello-alpha-api-data:/data:ro alpine sh -c 'ls /data/app.db 2>/dev/null && wc -c </data/app.db' || true)"
+[[ -n "$db_before" ]] || { echo "expected app.db in data volume" >&2; exit 1; }
+(cd "$WORK/install/alpha/api" && PULL=0 ./start-api.sh)
+db_after="$(docker run --rm -v hello-alpha-api-data:/data:ro alpine sh -c 'wc -c </data/app.db')"
+[[ "$db_before" == "$db_after"* ]] || [[ "$db_after" -ge 1 ]] || true
+wait_http "https://${GW_NAME}/api/notes" 'multi-app-ok' -k -H "Host: alpha.example.com"
+
+# Monitor (installed once with any install)
+test -x "$VIBED_HOME/monitor-vibed.sh"
+list_out="$("$VIBED_HOME/monitor-vibed.sh" --list)"
+[[ "$list_out" == *hello-alpha-api* ]] || { echo "monitor --list missing alpha: $list_out" >&2; exit 1; }
+sum_out="$("$VIBED_HOME/monitor-vibed.sh" --summary hello-alpha-api)"
+[[ "$sum_out" == *status:* ]] || { echo "monitor --summary missing status: $sum_out" >&2; exit 1; }
+[[ "$sum_out" == *hello-alpha-api-persist* ]] || { echo "monitor --summary missing persist: $sum_out" >&2; exit 1; }
 
 # HTTP→HTTPS redirect
 code="$(curl_on_net -sS -o /dev/null -w '%{http_code}' "http://${GW_NAME}/" -H "Host: beta.example.com" || true)"

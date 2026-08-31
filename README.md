@@ -19,7 +19,7 @@ git add dist && git commit && git push
 
 ## Operator flow (VPS)
 
-Non-root agent prep (SSH, Docker group, one-time uid-1000 operator or ~/services ACL): [`skills/agent-vps-prep/SKILL.md`](skills/agent-vps-prep/SKILL.md).
+Non-root agent prep (SSH, Docker group): [`skills/agent-vps-prep/SKILL.md`](skills/agent-vps-prep/SKILL.md).
 
 ```bash
 # 1) DNS — paste dist/DNS-SKILL.md into AU browser agent
@@ -44,7 +44,10 @@ Multi-app: further products’ `install-gateway.sh` only add `apps/{other}/sites
 |------|---------|
 | `~/services/gateway` | Host nginx (`GATEWAY_HOME`) |
 | `~/services/vibed-infra/update-agent` | Serial pull queue; GHCR notify via GitHub Actions OIDC |
-| `~/services/vibed-infra/persist-logs` | Per-app WALs + optional R2/S3 ship |
+| `~/services/vibed-infra/persist-logs` | Ship credentials + host cron leftover; per-app WALs live in named volumes |
+| `~/services/vibed-infra/monitor-vibed.sh` | TUI: list deployments, summary, tail docker/volume logs |
+
+App durable data (SQLite, persist WALs, worker logs) uses **Docker named volumes** by default — not bind mounts under `~/services`. Digests recreate containers; volumes keep the DB.
 
 ## Image updates (docker pull)
 
@@ -62,7 +65,8 @@ See [`skills/infra-update-agent/SKILL.md`](skills/infra-update-agent/SKILL.md). 
 | `package.sh` / `lib/package.py` | Build `dist/` |
 | `templates/host-gateway/` | Shared gateway skeleton |
 | `templates/update-agent/` | Queue agent + webhook |
-| `templates/persist-logs/` | Shipper install |
+| `templates/persist-logs/` | Shipper install + persist sidecar |
+| `templates/monitor/` | Machine-wide `monitor-vibed.sh` |
 | `lib/persistlog/` | Python append / seal / replay |
 | `skills/` | system-gateway, agent-vps-prep, infra-update-agent, infra-cicd, infra-packager, persist-logs, dns-configure |
 
@@ -75,7 +79,9 @@ See [`skills/infra-update-agent/SKILL.md`](skills/infra-update-agent/SKILL.md). 
 | `VIBED_UPDATE_AGENT` | Override update-agent dir (default `$VIBED_HOME/update-agent`) |
 | `GATEWAY_PUBLIC_IP` | VPS IPv4 (from `gateway.publicIp`) |
 | `TLS_EMAIL` / `TLS_MODE` | Let’s Encrypt email; `lab` or `letsencrypt` (docker certbot → `./certs` PEMs; optional `CERTBOT_IMAGE` / `LETSENCRYPT_HOME`) |
-| `PERSIST_LOG_DIR` | Per-service event log dir |
+| `DATA_VOLUME` / `PERSIST_LOG_VOLUME` / `WORKER_LOG_VOLUME` | Named volume overrides (default `{container}-{data,persist,logs}`) |
+| `PERSIST_LOGS` | Set `0` to disable persist volume + sidecar |
+| `DATA_BIND` / `PERSIST_LOG_BIND` / `LOGS_BIND` | Force host bind mounts (debug) |
 | `DOCKER_AUTO_PRUNE` | Prune dangling images after update (default on) |
 
 ## Tests

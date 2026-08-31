@@ -14,17 +14,27 @@ Each service writes **domain events** to a durable local log. After DB loss (or 
 
 ## Paths
 
-- Machine root: `~/services/vibed-infra/persist-logs/` (one-time `install-persist-logs.sh`)
-- Per app/role: `$PERSIST_LOG_DIR` (set in `.env`, mounted into API as `/persist-logs`)
+- Machine config (credentials + host cron leftover): `~/services/vibed-infra/persist-logs/` (one-time `install-persist-logs.sh`)
+- Per deployment: Docker **named volume** `${DOCKER_NAME}-persist` mounted at `/persist-logs` (default). Set `PERSIST_LOGS=0` to disable. Bind escape: `PERSIST_LOG_BIND=1` + `PERSIST_LOG_DIR=…`.
+- **Ship sidecar** `${DOCKER_NAME}-persist-ship` shares only that persist volume (no Docker socket, no app `/data`). Uses machine `.env` for R2/S3; app container does not get those secrets.
+- Object keys: `{machine}/{PERSIST_SHIP_PREFIX}/{rel}` (prefix defaults to the app container name).
 
 ## Algorithm
 
 1. **Append** NDJSON to `wal.ndjson` with fsync (fast, free).
 2. **Seal** → `seg-NNNN.ndjson.gz` at ~8 MiB or ~60s.
-3. **Ship** sealed segments with one PUT each (`PERSIST_SHIP=1` + R2/S3 env). Default `PERSIST_SHIP=0` (local only).
+3. **Ship** sealed segments with one PUT each (`PERSIST_SHIP=1` + R2/S3 env). Default `PERSIST_SHIP=0` (local only). Sidecar prefers stdlib SigV4; host cron may use `aws` CLI.
 4. **Replay** sealed + wal in order.
 
 Python: `lib/persistlog` — `append`, `seal`, `iter_events`, `replay`.
+
+## Inspect on the VPS
+
+```bash
+~/services/vibed-infra/monitor-vibed.sh
+# or:
+docker run --rm -v "${DOCKER_NAME}-persist:/persist-logs:ro" alpine ls -laR /persist-logs
+```
 
 ## Event schema
 
