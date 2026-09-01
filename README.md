@@ -68,7 +68,7 @@ See [`skills/infra-update-agent/SKILL.md`](skills/infra-update-agent/SKILL.md). 
 | `templates/persist-logs/` | Shipper install + persist sidecar |
 | `templates/monitor/` | Machine-wide `monitor-vibed.sh` |
 | `lib/persistlog/` | Python append / seal / replay |
-| `skills/` | system-gateway, agent-vps-prep, infra-update-agent, infra-cicd, infra-packager, persist-logs, dns-configure |
+| `skills/` | system-gateway, agent-vps-prep, infra-update-agent, infra-cicd, infra-e2e-cicd, infra-packager, persist-logs, dns-configure |
 
 ## Environment
 

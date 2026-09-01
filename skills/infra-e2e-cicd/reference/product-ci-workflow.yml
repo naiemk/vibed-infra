@@ -1,0 +1,131 @@
+# Product CI workflow (copy to `.github/workflows/ci.yml`)
+
+Example for a vibed-infra-packaged product with API, UI, and worker images.
+Adjust paths, image names, and e2e commands to match the product repo.
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm test
+      - name: Package drift check
+        run: |
+          ./package.sh
+          git diff --exit-code dist/
+
+  build-api:
+    needs: validate
+    uses: naiemk/vibed-infra/.github/workflows/docker-build-reusable.yml@main
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    with:
+      dockerfile: app/api/Dockerfile
+      image: ghcr.io/${{ github.repository_owner }}/my-api
+      build-args: BUILD_PROFILE=production
+    secrets: inherit
+
+  build-ui:
+    needs: validate
+    uses: naiemk/vibed-infra/.github/workflows/docker-build-reusable.yml@main
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    with:
+      dockerfile: app/ui/Dockerfile
+      image: ghcr.io/${{ github.repository_owner }}/my-ui
+      build-args: BUILD_PROFILE=production
+    secrets: inherit
+
+  build-nodes:
+    needs: validate
+    uses: naiemk/vibed-infra/.github/workflows/docker-build-reusable.yml@main
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    with:
+      dockerfile: app/worker/Dockerfile
+      image: ghcr.io/${{ github.repository_owner }}/my-worker
+      build-args: BUILD_PROFILE=production
+    secrets: inherit
+
+  e2e-playwright:
+    needs: [build-api, build-ui, build-nodes]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: e2e
+          POSTGRES_PASSWORD: e2e
+          POSTGRES_DB: e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://e2e:e2e@localhost:5432/e2e
+      VIBED_E2E_HARNESS: "1"
+      E2E_CAPTCHA_SECRET: ci-test-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - name: Build local e2e images
+        run: bash scripts/build-images.sh
+      - name: Start e2e stack
+        run: docker compose -f docker-compose.e2e.yml up -d --wait
+      - name: Run DB migrations
+        run: npm run db:migrate
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Playwright e2e (critical paths)
+        run: npx playwright test --grep @smoke
+      - name: Teardown
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v
+
+  harness-absence:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production-profile API image
+        run: docker build --build-arg BUILD_PROFILE=production -t prod-api:ci app/api
+      - name: Assert harness routes absent
+        run: |
+          cid=$(docker run -d -p 18080:8080 prod-api:ci)
+          trap "docker rm -f $cid" EXIT
+          sleep 2
+          code=$(curl -sf -o /dev/null -w "%{http_code}" http://localhost:18080/__e2e__/health || echo "000")
+          test "$code" = "404" || test "$code" = "000" || (echo "harness leaked: HTTP $code" && exit 1)
+```
+
+## Notes
+
+- **PR builds**: GHCR push still runs; OIDC notify only fires on default branch (handled inside reusable workflow).
+- **Disable notify on PR-only builds**: pass `notify: false` to the reusable workflow when `github.event_name == 'pull_request'`.
+- **Matrix alternative**: if GitHub limits reusable workflow calls, inline the build-push steps from [`docker-build-reusable.yml`](../../../.github/workflows/docker-build-reusable.yml) into a matrix job.
+- **Infra dist e2e** (optional): add `bash test-dist.sh --profile api` on a Docker runner to prove install scripts — separate from Playwright.

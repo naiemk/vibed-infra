@@ -41,6 +41,8 @@ On the default branch, the reusable workflow mints a GitHub Actions OIDC JWT (au
 2. Build/push images to GHCR (reusable workflow notifies the VPS; requires `id-token: write`).
 3. Optional job: `test-dist.sh --profile api` on a Docker-enabled runner.
 
+**Product e2e (Playwright, temp DB, human-action harnesses):** see [`infra-e2e-cicd`](../infra-e2e-cicd/SKILL.md). vibed-infra CI validates the packager; product repos add browser e2e for app critical paths.
+
 ## Checklist
 
 - [ ] Four YAML templates under `templates/` (`gateway.publicIp` / `tlsEmail` / `sites[]` set for production)

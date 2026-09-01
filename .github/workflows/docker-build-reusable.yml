@@ -1,5 +1,5 @@
 # Reusable GHCR docker build — one image per workflow_call.
-# Keep in sync with .github/workflows/docker-build-reusable.yml (GitHub uses .github/).
+# Keep in sync with github/workflows/docker-build-reusable.yml (npm ships github/).
 #
 # Caller (repeat per image or use a matrix in the caller workflow):
 #
