@@ -36,7 +36,7 @@ exec bash "$PACKAGER/package.sh" --product "$ROOT" --out "$ROOT/dist"
 git add dist && git commit && git push
 ```
 
-6. **CI** — product repo: package drift check + GHCR build (notifies VPS). Packager repo: `npm test`, `oidc-webhook-e2e`, `test-dist.sh`, `npm run test:e2e-multi`.
+6. **CI** — product repo: package drift check + GHCR build (notifies VPS) + Playwright e2e for critical paths ([`infra-e2e-cicd`](../infra-e2e-cicd/SKILL.md)). Packager repo: `npm test`, `oidc-webhook-e2e`, `test-dist.sh`, `npm run test:e2e-multi`.
 
 7. **VPS** — DNS first (paste `dist/DNS-SKILL.md` into AU agent), then wget. Install registers the app with the update-agent so the next GHCR push can pull immediately:
 

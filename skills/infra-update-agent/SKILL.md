@@ -63,6 +63,8 @@ jobs:
 
 URLs come from `gateway.publicIp` + `gateway.sites[].host` already in config (`dist/packageconfig.yaml` `webhook.url` / `fallbackUrl`). Disable notify with `notify: false`.
 
+For Playwright e2e, temp DB, and CI-only harnesses on the product side, see [`infra-e2e-cicd`](../infra-e2e-cicd/SKILL.md).
+
 Local curl can send `X-Vibed-Secret` from `tokens/{app}` (compiled hash). Optional `WEBHOOK_SECRET` still works as an override.
 
 ## Tests
